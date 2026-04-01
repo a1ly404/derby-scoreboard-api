@@ -1,0 +1,133 @@
+from __future__ import annotations
+
+import asyncio
+
+import pytest
+import pytest_asyncio
+from httpx import AsyncClient, ASGITransport
+
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from main import create_app
+from tests.conftest import MockScoreboardServer
+
+pytestmark = pytest.mark.asyncio
+
+
+@pytest_asyncio.fixture
+async def app_client(mock_server: MockScoreboardServer):
+    """
+    Create a FastAPI app wired to the mock scoreboard server,
+    and return an httpx AsyncClient for making test requests.
+
+    ASGITransport does not trigger ASGI lifespan, so we manually
+    start and stop the scoreboard WS client around the test.
+    """
+    app = create_app(scoreboard_host="127.0.0.1", scoreboard_port=mock_server.port)
+    sb_client = app.state.scoreboard_client
+    task = sb_client.start()
+    # Wait for the WS client to connect and receive the initial snapshot
+    for _ in range(50):
+        if sb_client.connected and sb_client.get_version() is not None:
+            break
+        await asyncio.sleep(0.05)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        yield client
+    sb_client.stop()
+    try:
+        await asyncio.wait_for(asyncio.shield(task), timeout=2)
+    except (asyncio.CancelledError, asyncio.TimeoutError):
+        pass
+
+
+async def test_health_connected(app_client):
+    resp = await app_client.get("/health")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["connected"] is True
+    assert data["scoreboard_version"] == "v5.0.0-test"
+
+
+async def test_live_returns_200(app_client):
+    resp = await app_client.get("/live")
+    assert resp.status_code == 200
+
+
+async def test_live_team_names(app_client):
+    resp = await app_client.get("/live")
+    data = resp.json()
+    assert data["team1"]["name"] == "Home Team"
+    assert data["team2"]["name"] == "Away Team"
+
+
+async def test_live_scores(app_client):
+    resp = await app_client.get("/live")
+    data = resp.json()
+    assert data["team1"]["score"] == 42
+    assert data["team2"]["score"] == 37
+
+
+async def test_live_clocks(app_client):
+    resp = await app_client.get("/live")
+    data = resp.json()
+    assert data["jam_clock_ms"] == 60000
+    assert data["period_clock_ms"] == 900000
+    assert data["jam_running"] is False
+    assert data["period"] == 1
+    assert data["jam"] == 3
+
+
+async def test_live_jammer_names(app_client):
+    resp = await app_client.get("/live")
+    data = resp.json()
+    assert data["team1"]["jammer"] == "Speed Demon"
+    assert data["team2"]["jammer"] == "Lightning Bolt"
+
+
+async def test_live_reflects_score_update(app_client, mock_server):
+    await mock_server.push_update({
+        "ScoreBoard.CurrentGame.Team(2).Score": 50,
+    })
+    await asyncio.sleep(0.15)
+    resp = await app_client.get("/live")
+    data = resp.json()
+    assert data["team2"]["score"] == 50
+
+
+async def test_live_reflects_jam_start(app_client, mock_server):
+    await mock_server.push_update({
+        "ScoreBoard.CurrentGame.InJam": True,
+        "ScoreBoard.CurrentGame.Clock(Jam).Running": True,
+        "ScoreBoard.CurrentGame.Clock(Jam).Time": 120000,
+    })
+    await asyncio.sleep(0.15)
+    resp = await app_client.get("/live")
+    data = resp.json()
+    assert data["in_jam"] is True
+    assert data["jam_running"] is True
+    assert data["jam_clock_ms"] == 120000
+
+
+async def test_raw_contains_crg_keys(app_client):
+    resp = await app_client.get("/raw")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "ScoreBoard.CurrentGame.Team(1).Score" in data
+    assert "ScoreBoard.CurrentGame.Clock(Jam).Time" in data
+
+
+async def test_openapi_docs_available(app_client):
+    resp = await app_client.get("/docs")
+    assert resp.status_code == 200
+
+
+async def test_openapi_json_available(app_client):
+    resp = await app_client.get("/openapi.json")
+    assert resp.status_code == 200
+    schema = resp.json()
+    assert "/live" in schema["paths"]
+    assert "/health" in schema["paths"]
+    assert "/raw" in schema["paths"]
