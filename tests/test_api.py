@@ -200,3 +200,22 @@ async def test_raw_503_has_retry_after_header(app_client_offline):
     assert resp.status_code == 503
     assert "retry-after" in resp.headers
     assert int(resp.headers["retry-after"]) > 0
+
+
+# ---------------------------------------------------------------------------
+# Concurrency / load sanity — simulates multiple overlays polling simultaneously
+# ---------------------------------------------------------------------------
+
+async def test_concurrent_live_requests(app_client):
+    """
+    Fire 25 simultaneous /live requests (5 overlays × 200ms poll = ~25 req/s).
+    All must return 200 with consistent scores.
+    """
+    responses = await asyncio.gather(
+        *[app_client.get("/live") for _ in range(25)]
+    )
+    for resp in responses:
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["team1"]["score"] == 42
+        assert data["team2"]["score"] == 37

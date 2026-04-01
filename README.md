@@ -70,6 +70,7 @@ Clean, mapped live game state. Poll this at whatever rate suits your overlay (20
   "jam_running": true,
   "in_jam": true,
   "game_state": "Running",
+  "state_age_seconds": 0.1,
   "team1": {
     "name": "Home Team",
     "score": 42,
@@ -99,14 +100,19 @@ Clean, mapped live game state. Poll this at whatever rate suits your overlay (20
 
 > **Clock note:** All `*_ms` fields are in **milliseconds**. E.g. `89000` = 1 minute 29 seconds.
 
+> **`state_age_seconds`:** Seconds since the proxy last received an update from the scoreboard.
+> `null` means no update has been received yet (proxy just connected). If this grows above a few
+> seconds while `connected` is `true`, the scoreboard may be frozen.
+
 ### `GET /raw`
 Full flat state dict as received from the scoreboard WebSocket. Useful for discovering all available fields or debugging.
 
 ### `GET /health`
 Connection status:
 ```json
-{"connected": true, "scoreboard_version": "v5.0.0"}
+{"connected": true, "scoreboard_version": "v5.0.0", "seconds_since_update": 0.3}
 ```
+`seconds_since_update` is `null` until the first update is received. A large value while `connected` is `true` indicates the scoreboard may be frozen.
 
 ### `GET /docs`
 Auto-generated interactive OpenAPI docs (Swagger UI).
