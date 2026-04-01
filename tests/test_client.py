@@ -108,13 +108,21 @@ async def test_get_live_state_maps_all_positions(mock_server):
         await asyncio.sleep(0.05)
 
 
-async def test_penalty_box_false_by_default(mock_server):
+async def test_penalty_box_defaults_false_when_key_absent(mock_server):
+    """When CRG has never sent a PenaltyBox key, in_box must default to False (not None)."""
     client, task = await _connected_client(mock_server)
     try:
+        # Delete all PenaltyBox keys so the client has no value for them
+        await mock_server.push_update({
+            f"ScoreBoard.CurrentGame.Team({t}).Position({p}).PenaltyBox": None
+            for t in (1, 2)
+            for p in ("Jammer", "Pivot", "Blocker1", "Blocker2", "Blocker3")
+        })
+        await asyncio.sleep(0.1)
         state = client.get_live_state()
         for pos in (state.team1.jammer, state.team1.pivot,
                     state.team1.blocker1, state.team1.blocker2, state.team1.blocker3):
-            assert pos.in_box is False
+            assert pos.in_box is False, f"Expected False when key absent, got {pos.in_box}"
     finally:
         client.stop()
         await asyncio.sleep(0.05)

@@ -163,7 +163,7 @@ class ScoreboardClient:
             field: SkaterPosition(
                 name=self._get(f"{prefix}Position({crg_pos}).Name"),
                 number=self._get(f"{prefix}Position({crg_pos}).RosterNumber"),
-                in_box=self._get(f"{prefix}Position({crg_pos}).PenaltyBox", bool),
+                in_box=self._get(f"{prefix}Position({crg_pos}).PenaltyBox", bool) or False,
             )
             for field, crg_pos in POSITION_MAP.items()
         }
