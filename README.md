@@ -8,24 +8,66 @@ The CRG scoreboard broadcasts live data (scores, clocks, jammer info) over WebSo
 
 ## Requirements
 
-- Python 3.10+
+- Python 3.10+ (3.13 recommended)
 - CRG Scoreboard running on the same machine (or accessible on the network)
+- Java 11+ (for running the CRG Scoreboard)
 
-## Install
+## Setup on Windows
 
-```bash
-pip install -r requirements.txt
+### 1 — Install Python (if not already installed)
+
+Open PowerShell as administrator:
+
+```powershell
+choco install python --version=3.13.0 -y
 ```
 
-## Usage
+Or download directly from [python.org](https://www.python.org/downloads/).
 
-Start the proxy (scoreboard must already be running):
+Verify:
+```powershell
+python --version
+```
 
-```bash
+### 2 — Install Java (required to run the CRG Scoreboard)
+
+```powershell
+choco install temurin21 -y
+```
+
+Or download from [adoptium.net](https://adoptium.net/).
+
+Verify:
+```powershell
+java -version
+```
+
+### 3 — Build and start the CRG Scoreboard
+
+From the scoreboard repo directory:
+
+```powershell
+# Download Ant (one-time) if you don't have it:
+choco install ant -y
+
+# Build the jar
+ant compile
+
+# Start the scoreboard (runs on port 8000)
+java -jar lib\crg-scoreboard.jar
+```
+
+Open `http://localhost:8000` in a browser to confirm it's running.
+
+### 4 — Install and start the proxy
+
+```powershell
+cd derby-scoreboard-api
+pip install -r requirements.txt
 python main.py
 ```
 
-The API is now available at `http://localhost:5000`.
+The API is now available at `http://localhost:5001`.
 
 **Options:**
 
@@ -34,7 +76,7 @@ The API is now available at `http://localhost:5000`.
 | `--scoreboard-host` | `localhost` | Hostname/IP of the CRG scoreboard |
 | `--scoreboard-port` | `8000` | Port the scoreboard is running on |
 | `--host` | `0.0.0.0` | Host to bind the API server to |
-| `--port` | `5000` | Port to serve the API on |
+| `--port` | `5001` | Port to serve the API on |
 
 **Remote scoreboard example:**
 ```bash
