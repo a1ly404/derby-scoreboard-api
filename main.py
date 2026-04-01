@@ -8,6 +8,8 @@ from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.status import HTTP_503_SERVICE_UNAVAILABLE
 
 from client import ScoreboardClient
 from models import HealthState, LiveState
@@ -60,6 +62,11 @@ def create_app(scoreboard_host: str = "localhost", scoreboard_port: int = 8000) 
     client = ScoreboardClient(host=scoreboard_host, port=scoreboard_port)
     app.state.scoreboard_client = client
 
+    @app.exception_handler(Exception)
+    async def _unhandled(request: Request, exc: Exception):
+        logger.exception("Unhandled error on %s", request.url.path)
+        return JSONResponse({"error": "internal server error"}, status_code=500)
+
     @app.get(
         "/live",
         response_model=LiveState,
@@ -71,7 +78,13 @@ def create_app(scoreboard_host: str = "localhost", scoreboard_port: int = 8000) 
         ),
     )
     async def get_live(request: Request) -> LiveState:
-        return request.app.state.scoreboard_client.get_live_state()
+        sb = request.app.state.scoreboard_client
+        if not sb.connected:
+            return JSONResponse(
+                {"detail": "scoreboard not connected — proxy is retrying"},
+                status_code=HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        return sb.get_live_state()
 
     @app.get(
         "/raw",
@@ -136,9 +149,13 @@ if __name__ == "__main__":
         scoreboard_host=args.scoreboard_host,
         scoreboard_port=args.scoreboard_port,
     )
-    uvicorn.run(
-        app,
-        host=args.host,
-        port=args.port,
-        log_level="info",
-    )
+    try:
+        uvicorn.run(
+            app,
+            host=args.host,
+            port=args.port,
+            log_level="info",
+        )
+    except Exception:
+        logger.exception("Fatal error — proxy exiting")
+        raise

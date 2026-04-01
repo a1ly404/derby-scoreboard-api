@@ -25,10 +25,39 @@ PING_MSG = json.dumps({"action": "Ping"})
 RECONNECT_DELAY = 2  # seconds
 PING_INTERVAL = 30   # seconds
 
-# Mapping of CRG v5+ WS state keys to (model_field_path, type_coercion)
-# All live keys are under ScoreBoard.CurrentGame.*
 _PREFIX = "ScoreBoard.CurrentGame."
 _VERSION_KEY = "ScoreBoard.Version(release)"
+
+# ---------------------------------------------------------------------------
+# Declarative field maps — add a new field in 2 steps:
+#   1. Add a field to the relevant Pydantic model in models.py
+#   2. Add an entry here: "model_field_name": ("CRG.Key.Suffix", python_type)
+# ---------------------------------------------------------------------------
+
+# Fields that appear once per team.  The Team(N). prefix is added automatically.
+TEAM_FIELD_MAP: Dict[str, tuple] = {
+    "name":           ("Name",                         str),
+    "score":          ("Score",                        int),
+    "jam_score":      ("JamScore",                     int),
+    "jammer":         ("Position(Jammer).Name",        str),
+    "jammer_number":  ("Position(Jammer).RosterNumber",str),
+    "lead":           ("Lead",                         bool),
+    "display_lead":   ("DisplayLead",                  bool),
+    "calloff":        ("Calloff",                      bool),
+    "lost":           ("Lost",                         bool),
+    "star_pass":      ("StarPass",                     bool),
+}
+
+# Top-level game fields.  Suffixes are relative to ScoreBoard.CurrentGame.
+GAME_FIELD_MAP: Dict[str, tuple] = {
+    "period":          ("Clock(Period).Number", int),
+    "jam":             ("Clock(Jam).Number",    int),
+    "jam_clock_ms":    ("Clock(Jam).Time",      int),
+    "period_clock_ms": ("Clock(Period).Time",   int),
+    "jam_running":     ("Clock(Jam).Running",   bool),
+    "in_jam":          ("InJam",                bool),
+    "game_state":      ("State",                str),
+}
 
 
 def _coerce(value: Any, target_type: type) -> Any:
@@ -89,35 +118,21 @@ class ScoreboardClient:
         return _coerce(raw, target_type)
 
     def _team(self, n: int) -> TeamState:
-        t = f"Team({n})."
-        return TeamState(
-            name=self._get(f"{t}Name"),
-            score=self._get(f"{t}Score", int),
-            jam_score=self._get(f"{t}JamScore", int),
-            jammer=self._get(f"{t}Position(Jammer).Name"),
-            jammer_number=self._get(f"{t}Position(Jammer).RosterNumber"),
-            lead=self._get(f"{t}Lead", bool),
-            display_lead=self._get(f"{t}DisplayLead", bool),
-            calloff=self._get(f"{t}Calloff", bool),
-            lost=self._get(f"{t}Lost", bool),
-            star_pass=self._get(f"{t}StarPass", bool),
-        )
+        """Build a TeamState for team n using TEAM_FIELD_MAP."""
+        prefix = f"Team({n})."
+        return TeamState(**{
+            field: self._get(prefix + suffix, typ)
+            for field, (suffix, typ) in TEAM_FIELD_MAP.items()
+        })
 
     def get_live_state(self) -> LiveState:
         """Build and return a LiveState model from current raw state."""
-        # Current jam number: UpcomingJamNumber - 1 when in a jam,
-        # otherwise UpcomingJamNumber (the next jam about to start).
-        # Clock(Jam).Number is simpler and always correct for display.
-        jam_num_raw = self._get("Clock(Jam).Number", int)
-
+        game_fields = {
+            field: self._get(suffix, typ)
+            for field, (suffix, typ) in GAME_FIELD_MAP.items()
+        }
         return LiveState(
-            period=self._get("Clock(Period).Number", int),
-            jam=jam_num_raw,
-            jam_clock_ms=self._get("Clock(Jam).Time", int),
-            period_clock_ms=self._get("Clock(Period).Time", int),
-            jam_running=self._get("Clock(Jam).Running", bool),
-            in_jam=self._get("InJam", bool),
-            game_state=self._get("State"),
+            **game_fields,
             team1=self._team(1),
             team2=self._team(2),
         )
@@ -164,20 +179,24 @@ class ScoreboardClient:
     async def run(self) -> None:
         """
         Main loop: connect and auto-reconnect on failure.
-        Intended to run as a long-lived background asyncio task.
+        This loop is intentionally infinite and swallows all exceptions so
+        that a scoreboard restart, network blip, or any other error never
+        crashes the proxy process — it just reconnects after RECONNECT_DELAY.
         """
         uri = f"ws://{self.host}:{self.port}/WS/"
         while True:
             self._connected = False
             try:
                 await self._run_once(uri)
+            except asyncio.CancelledError:
+                # Proxy is shutting down — let the cancellation propagate.
+                raise
             except OSError as exc:
-                logger.warning("Connection failed: %s", exc)
-            except Exception as exc:
-                logger.exception("Unexpected error in WS client: %s", exc)
+                logger.warning("Scoreboard unreachable (%s) — retrying in %ds", exc, RECONNECT_DELAY)
+            except Exception:
+                logger.exception("Unexpected WS client error — retrying in %ds", RECONNECT_DELAY)
             finally:
                 self._connected = False
-            logger.info("Reconnecting in %ds...", RECONNECT_DELAY)
             await asyncio.sleep(RECONNECT_DELAY)
 
     def start(self) -> asyncio.Task:
