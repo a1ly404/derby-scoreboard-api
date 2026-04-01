@@ -176,3 +176,27 @@ async def test_health_includes_seconds_since_update(app_client):
     assert "seconds_since_update" in data
     assert data["seconds_since_update"] is not None
     assert data["seconds_since_update"] >= 0.0
+
+
+async def test_live_includes_state_age_seconds(app_client):
+    """state_age_seconds must be a non-negative float on a live /live response."""
+    resp = await app_client.get("/live")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "state_age_seconds" in data
+    assert data["state_age_seconds"] is not None
+    assert data["state_age_seconds"] >= 0.0
+
+
+async def test_live_503_has_retry_after_header(app_client_offline):
+    resp = await app_client_offline.get("/live")
+    assert resp.status_code == 503
+    assert "retry-after" in resp.headers
+    assert int(resp.headers["retry-after"]) > 0
+
+
+async def test_raw_503_has_retry_after_header(app_client_offline):
+    resp = await app_client_offline.get("/raw")
+    assert resp.status_code == 503
+    assert "retry-after" in resp.headers
+    assert int(resp.headers["retry-after"]) > 0

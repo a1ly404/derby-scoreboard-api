@@ -24,6 +24,7 @@ class LiveState(BaseModel):
     jam_running: Optional[bool] = None
     in_jam: Optional[bool] = None
     game_state: Optional[str] = None
+    state_age_seconds: Optional[float] = None
     team1: TeamState = TeamState()
     team2: TeamState = TeamState()
 

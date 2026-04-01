@@ -44,7 +44,7 @@ class LiveState(BaseModel):
 For a per-team field, add to `TEAM_FIELD_MAP`:
 
 ```python
-TEAM_FIELD_MAP: Dict[str, tuple] = {
+TEAM_FIELD_MAP: Dict[str, tuple[str, type]] = {
     ...
     "no_initial": ("NoInitial", bool),   # ← add here
 }
@@ -56,7 +56,7 @@ The key is the `TeamState` field name. The value is a tuple of
 For a top-level game field, add to `GAME_FIELD_MAP`:
 
 ```python
-GAME_FIELD_MAP: Dict[str, tuple] = {
+GAME_FIELD_MAP: Dict[str, tuple[str, type]] = {
     ...
     "in_overtime": ("InOvertime", bool),  # ← add here
 }
@@ -72,13 +72,18 @@ No other code changes needed.
 Add a route inside `create_app()` in `main.py`, following the existing pattern:
 
 ```python
-@app.get("/timeout", summary="Current timeout info")
+@app.get(
+    "/timeout",
+    responses={503: {"description": "Scoreboard not connected"}},
+    summary="Current timeout info",
+)
 async def get_timeout(request: Request) -> dict:
     sb = request.app.state.scoreboard_client
     if not sb.connected:
-        return JSONResponse(
-            {"detail": "scoreboard not connected"},
+        raise HTTPException(
             status_code=HTTP_503_SERVICE_UNAVAILABLE,
+            detail="scoreboard not connected",
+            headers={"Retry-After": "2"},
         )
     state = sb.get_raw_state()
     return {
@@ -87,7 +92,8 @@ async def get_timeout(request: Request) -> dict:
     }
 ```
 
-Always guard with `if not sb.connected` so the endpoint returns a clean 503
+Always guard with `if not sb.connected` and raise `HTTPException(503)` so the
+endpoint returns a clean, spec-documented error with a `Retry-After` header
 rather than silent nulls when the scoreboard is down.
 
 You can discover available key names by hitting `GET /raw` while the scoreboard
@@ -143,14 +149,26 @@ Those keys will then appear in `/raw` and be available for mapping.
 
 ## Running in the background as a Windows service (optional)
 
-If you want the proxy to start automatically with Windows, use NSSM
-(Non-Sucking Service Manager):
+> **Low-RAM machines:** Prefer NSSM over Docker. Docker Desktop on Windows
+> requires WSL2, which reserves 1–2 GB of RAM before a container even starts.
+> The proxy itself uses ~60 MB as a native Python process, so NSSM is the
+> right choice on an older machine.
+
+Use NSSM (Non-Sucking Service Manager):
 
 ```powershell
+# First, find your Python executable path:
+where python
+# Example: C:\Users\YourName\AppData\Local\Programs\Python\Python313\python.exe
+
 choco install nssm -y
-nssm install DerbyScoreboardAPI python "C:\path\to\derby-scoreboard-api\main.py"
+nssm install DerbyScoreboardAPI "C:\Users\YourName\AppData\Local\Programs\Python\Python313\python.exe" "C:\path\to\derby-scoreboard-api\main.py"
 nssm start DerbyScoreboardAPI
 ```
+
+> **Important:** Always use the **full path** to `python.exe`. The `python`
+> command resolves from your user PATH, but Windows services run in a separate
+> system context where user PATH entries are not available.
 
 Or use Task Scheduler with "Start at logon" and "Run whether user is logged on or not".
 

@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.status import HTTP_503_SERVICE_UNAVAILABLE
 
-from client import ScoreboardClient
+from client import RECONNECT_DELAY, ScoreboardClient
 from models import HealthState, LiveState
 
 logging.basicConfig(
@@ -89,7 +89,9 @@ def create_app(scoreboard_host: str = "localhost", scoreboard_port: int = 8000) 
             raise HTTPException(
                 status_code=HTTP_503_SERVICE_UNAVAILABLE,
                 detail="scoreboard not connected — proxy is retrying",
+                headers={"Retry-After": str(RECONNECT_DELAY)},
             )
+        state.state_age_seconds = sb.get_seconds_since_update()
         return state
 
     @app.get(
@@ -108,6 +110,7 @@ def create_app(scoreboard_host: str = "localhost", scoreboard_port: int = 8000) 
             raise HTTPException(
                 status_code=HTTP_503_SERVICE_UNAVAILABLE,
                 detail="scoreboard not connected — proxy is retrying",
+                headers={"Retry-After": str(RECONNECT_DELAY)},
             )
         return sb.get_raw_state()
 
