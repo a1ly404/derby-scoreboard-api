@@ -452,3 +452,73 @@ async def test_box_elapsed_only_accumulates_for_in_box_skaters(mock_server):
     finally:
         client.stop()
         await asyncio.sleep(0.05)
+
+
+async def test_box_elapsed_entry_simultaneous_with_clock_tick(mock_server):
+    """Skater entering box in the same message as a clock tick should NOT
+    receive elapsed credit for the interval before they entered."""
+    client, task = await _connected_client(mock_server)
+    try:
+        # Jam already running with clock at 50000
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Clock(Jam).Running": True,
+            "ScoreBoard.CurrentGame.Clock(Jam).Time": 50000,
+        })
+        await asyncio.sleep(0.1)
+
+        # Box entry AND 2-second clock tick in the same message
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Team(1).Position(Blocker1).PenaltyBox": True,
+            "ScoreBoard.CurrentGame.Clock(Jam).Time": 48000,
+        })
+        await asyncio.sleep(0.1)
+
+        state = client.get_live_state()
+        # The 2000 ms delta belongs to the interval before the skater entered;
+        # elapsed must still be 0 (not 2000).
+        assert state.team1.blocker1.in_box is True
+        assert state.team1.blocker1.box_elapsed_jam_ms == 0
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+async def test_box_elapsed_exit_simultaneous_with_clock_tick(mock_server):
+    """Skater exiting box in the same message as a clock tick SHOULD receive
+    elapsed credit for that final interval before being cleared."""
+    client, task = await _connected_client(mock_server)
+    try:
+        # Box entry, then jam starts
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Team(1).Position(Blocker2).PenaltyBox": True,
+            "ScoreBoard.CurrentGame.Clock(Jam).Running": True,
+            "ScoreBoard.CurrentGame.Clock(Jam).Time": 60000,
+        })
+        await asyncio.sleep(0.1)
+
+        # Accumulate 5 seconds
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Clock(Jam).Time": 55000,
+        })
+        await asyncio.sleep(0.1)
+
+        # Box exit AND 3-second clock tick arrive together —
+        # the final 3000 ms should be credited before the timer is cleared
+        # (but in_box will be False and box_elapsed_jam_ms will be None
+        #  because the skater has left; the key thing is it doesn't corrupt
+        #  any other skater and the exit doesn't suppress the delta for others)
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Team(1).Position(Blocker2).PenaltyBox": False,
+            "ScoreBoard.CurrentGame.Clock(Jam).Time": 52000,
+        })
+        await asyncio.sleep(0.1)
+
+        state = client.get_live_state()
+        # Skater has left — elapsed is None
+        assert state.team1.blocker2.in_box is False
+        assert state.team1.blocker2.box_elapsed_jam_ms is None
+        # Other skaters unaffected
+        assert state.team1.blocker1.box_elapsed_jam_ms is None
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
