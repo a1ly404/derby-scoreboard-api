@@ -294,3 +294,175 @@ async def test_seconds_since_update_is_populated_after_connect(mock_server):
     finally:
         client.stop()
         await asyncio.sleep(0.05)
+
+
+# ---------------------------------------------------------------------------
+# box_time_remaining_ms tests
+# ---------------------------------------------------------------------------
+
+async def test_box_remaining_is_none_when_not_in_box(mock_server):
+    """box_time_remaining_ms is None for skaters not in the penalty box."""
+    client, task = await _connected_client(mock_server)
+    try:
+        state = client.get_live_state()
+        assert state.team1.blocker2.in_box is False
+        assert state.team1.blocker2.box_time_remaining_ms is None
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+async def test_box_remaining_starts_at_30000_on_box_entry(mock_server):
+    """box_time_remaining_ms starts at 30 000 the moment in_box becomes True."""
+    client, task = await _connected_client(mock_server)
+    try:
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Team(1).Position(Blocker1).PenaltyBox": True,
+        })
+        await asyncio.sleep(0.1)
+        state = client.get_live_state()
+        assert state.team1.blocker1.in_box is True
+        assert state.team1.blocker1.box_time_remaining_ms == 30_000
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+async def test_box_remaining_counts_down_while_jam_running(mock_server):
+    """box_time_remaining_ms decreases by the jam-clock delta when jam_running is True."""
+    client, task = await _connected_client(mock_server)
+    try:
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Team(1).Position(Blocker2).PenaltyBox": True,
+            "ScoreBoard.CurrentGame.Clock(Jam).Running": True,
+            "ScoreBoard.CurrentGame.Clock(Jam).Time": 60000,
+        })
+        await asyncio.sleep(0.1)
+
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Clock(Jam).Time": 59000,
+        })
+        await asyncio.sleep(0.1)
+        state = client.get_live_state()
+        assert state.team1.blocker2.box_time_remaining_ms == 29_000
+
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Clock(Jam).Time": 57000,
+        })
+        await asyncio.sleep(0.1)
+        state = client.get_live_state()
+        assert state.team1.blocker2.box_time_remaining_ms == 27_000
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+async def test_box_remaining_pauses_when_jam_not_running(mock_server):
+    """box_time_remaining_ms stays flat between jams (jam_running=False)."""
+    client, task = await _connected_client(mock_server)
+    try:
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Team(2).Position(Jammer).PenaltyBox": True,
+            "ScoreBoard.CurrentGame.Clock(Jam).Running": True,
+            "ScoreBoard.CurrentGame.Clock(Jam).Time": 30000,
+        })
+        await asyncio.sleep(0.1)
+
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Clock(Jam).Time": 28000,
+        })
+        await asyncio.sleep(0.1)
+        state = client.get_live_state()
+        assert state.team2.jammer.box_time_remaining_ms == 28_000
+
+        # Jam ends
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Clock(Jam).Running": False,
+            "ScoreBoard.CurrentGame.Clock(Jam).Time": 28000,
+        })
+        await asyncio.sleep(0.1)
+
+        # Clock update while jam stopped — should not change remaining
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Clock(Jam).Time": 27000,
+        })
+        await asyncio.sleep(0.1)
+        state = client.get_live_state()
+        assert state.team2.jammer.box_time_remaining_ms == 28_000
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+async def test_box_remaining_is_none_after_box_exit(mock_server):
+    """box_time_remaining_ms returns to None when in_box transitions to False."""
+    client, task = await _connected_client(mock_server)
+    try:
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Team(1).Position(Pivot).PenaltyBox": True,
+            "ScoreBoard.CurrentGame.Clock(Jam).Running": True,
+            "ScoreBoard.CurrentGame.Clock(Jam).Time": 20000,
+        })
+        await asyncio.sleep(0.1)
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Clock(Jam).Time": 10000,
+        })
+        await asyncio.sleep(0.1)
+        state = client.get_live_state()
+        assert state.team1.pivot.box_time_remaining_ms == 20_000
+
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Team(1).Position(Pivot).PenaltyBox": False,
+        })
+        await asyncio.sleep(0.1)
+        state = client.get_live_state()
+        assert state.team1.pivot.in_box is False
+        assert state.team1.pivot.box_time_remaining_ms is None
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+async def test_box_remaining_clamped_to_zero(mock_server):
+    """box_time_remaining_ms never goes below 0 even if elapsed exceeds 30 s."""
+    client, task = await _connected_client(mock_server)
+    try:
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Team(1).Position(Blocker3).PenaltyBox": True,
+            "ScoreBoard.CurrentGame.Clock(Jam).Running": True,
+            "ScoreBoard.CurrentGame.Clock(Jam).Time": 60000,
+        })
+        await asyncio.sleep(0.1)
+
+        # Tick past 30 s of elapsed time
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Clock(Jam).Time": 25000,
+        })
+        await asyncio.sleep(0.1)
+        state = client.get_live_state()
+        assert state.team1.blocker3.box_time_remaining_ms == 0
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+async def test_box_remaining_only_counts_down_for_in_box_skaters(mock_server):
+    """Remaining time does not change for skaters who are not in the box."""
+    client, task = await _connected_client(mock_server)
+    try:
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Team(1).Position(Blocker3).PenaltyBox": True,
+            "ScoreBoard.CurrentGame.Clock(Jam).Running": True,
+            "ScoreBoard.CurrentGame.Clock(Jam).Time": 60000,
+        })
+        await asyncio.sleep(0.1)
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Clock(Jam).Time": 55000,
+        })
+        await asyncio.sleep(0.1)
+        state = client.get_live_state()
+        assert state.team1.blocker3.box_time_remaining_ms == 25_000
+        assert state.team1.blocker1.box_time_remaining_ms is None
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)

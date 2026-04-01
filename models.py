@@ -7,6 +7,13 @@ class SkaterPosition(BaseModel):
     name: Optional[str] = None
     number: Optional[str] = None
     in_box: bool = False
+    box_time_remaining_ms: Optional[int] = None
+    """Milliseconds remaining in this skater's penalty, counting jam time only.
+    None when the skater is not in the box.  Starts at 30_000 on box entry and
+    counts down only while jam_running is True.  Clamped to 0 — will not go
+    negative.  Assumes a single 30-second penalty; for stacking, a future
+    version can multiply by penalty count before this is computed.
+    """
 
 
 class TeamState(BaseModel):
