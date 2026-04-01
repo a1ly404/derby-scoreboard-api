@@ -466,3 +466,108 @@ async def test_box_remaining_only_counts_down_for_in_box_skaters(mock_server):
     finally:
         client.stop()
         await asyncio.sleep(0.05)
+
+
+async def test_box_remaining_entry_simultaneous_with_clock_tick(mock_server):
+    """Skater entering box in same message as a clock tick should NOT have
+    the prior interval's elapsed subtracted — remaining must still be 30_000."""
+    client, task = await _connected_client(mock_server)
+    try:
+        # Jam already running with clock at 50000
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Clock(Jam).Running": True,
+            "ScoreBoard.CurrentGame.Clock(Jam).Time": 50000,
+        })
+        await asyncio.sleep(0.1)
+
+        # Box entry AND 2-second clock tick in the same message
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Team(1).Position(Blocker1).PenaltyBox": True,
+            "ScoreBoard.CurrentGame.Clock(Jam).Time": 48000,
+        })
+        await asyncio.sleep(0.1)
+
+        state = client.get_live_state()
+        # The 2000 ms delta precedes the skater's entry; remaining must be 30_000.
+        assert state.team1.blocker1.in_box is True
+        assert state.team1.blocker1.box_time_remaining_ms == 30_000
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+async def test_box_remaining_exit_simultaneous_with_clock_tick(mock_server):
+    """Skater exiting box in same message as a clock tick: other skaters'
+    remaining is unaffected and the exiting skater ends up None."""
+    client, task = await _connected_client(mock_server)
+    try:
+        # Blocker1 and Blocker2 both in box, jam running
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Team(1).Position(Blocker1).PenaltyBox": True,
+            "ScoreBoard.CurrentGame.Team(1).Position(Blocker2).PenaltyBox": True,
+            "ScoreBoard.CurrentGame.Clock(Jam).Running": True,
+            "ScoreBoard.CurrentGame.Clock(Jam).Time": 60000,
+        })
+        await asyncio.sleep(0.1)
+
+        # 5 seconds elapse
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Clock(Jam).Time": 55000,
+        })
+        await asyncio.sleep(0.1)
+        state = client.get_live_state()
+        assert state.team1.blocker1.box_time_remaining_ms == 25_000
+        assert state.team1.blocker2.box_time_remaining_ms == 25_000
+
+        # Blocker2 exits AND 3-second tick arrive together
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Team(1).Position(Blocker2).PenaltyBox": False,
+            "ScoreBoard.CurrentGame.Clock(Jam).Time": 52000,
+        })
+        await asyncio.sleep(0.1)
+
+        state = client.get_live_state()
+        # Blocker2 is gone
+        assert state.team1.blocker2.in_box is False
+        assert state.team1.blocker2.box_time_remaining_ms is None
+        # Blocker1 received the 3-second delta correctly (25_000 - 3_000 = 22_000)
+        assert state.team1.blocker1.box_time_remaining_ms == 22_000
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+async def test_timer_state_resets_on_reconnect(mock_server):
+    """Stale _box_elapsed / _prev_jam_clock_ms must not carry over after reconnect."""
+    client, task = await _connected_client(mock_server)
+    try:
+        # Put a skater in the box with elapsed time accumulated
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Team(1).Position(Blocker1).PenaltyBox": True,
+            "ScoreBoard.CurrentGame.Clock(Jam).Running": True,
+            "ScoreBoard.CurrentGame.Clock(Jam).Time": 30000,
+        })
+        await asyncio.sleep(0.1)
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Clock(Jam).Time": 25000,
+        })
+        await asyncio.sleep(0.1)
+        state = client.get_live_state()
+        assert state.team1.blocker1.box_time_remaining_ms == 25_000
+
+        # Force a reconnect by bouncing the server
+        await mock_server.stop()
+        await asyncio.sleep(0.15)
+        await mock_server.start()
+        for _ in range(60):
+            if client.connected:
+                break
+            await asyncio.sleep(0.1)
+
+        # After reconnect the initial snapshot re-sends PenaltyBox=False for everyone,
+        # so box_time_remaining_ms must be None — not a stale countdown.
+        state = client.get_live_state()
+        assert state.team1.blocker1.box_time_remaining_ms is None
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)

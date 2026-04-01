@@ -157,18 +157,49 @@ class ScoreboardClient:
 
     _PENALTY_MS = 30_000  # single-penalty duration; used to compute remaining
 
+    def _reset_timer_state(self) -> None:
+        """Reset per-connection timer state.
+
+        Called at the start of every new WebSocket connection so that stale
+        elapsed values and prev-clock/running flags from a previous session
+        cannot produce a large spurious delta immediately after reconnect.
+        """
+        self._box_elapsed: Dict[str, int] = {}
+        self._prev_jam_clock_ms = None
+        self._prev_jam_running = None
+
     def _tick_box_timers(self) -> None:
         """Accumulate jam-clock elapsed time for each in-box skater.
 
-        Called after every state update.  Only adds time when jam_running was
-        True at both the previous and current tick, which prevents a large
-        spurious delta from being counted when jam_running flips True at jam
-        start (clock jumps from 0 to 120 s).
+        Called after every state update. Uses a two-phase approach so that a
+        scoreboard message containing both a PenaltyBox change and a clock
+        tick is handled correctly:
+
+        Phase 1 — apply delta to the *previous* in-box set.  A skater who
+        just exited the box receives their final elapsed credit; a skater who
+        just entered does not receive credit for time before they arrived.
+
+        Phase 2 — update membership from the current PenaltyBox values.
+        Exiting skaters are removed; entering skaters are initialised at 0.
         """
         jam_clock = self._get("Clock(Jam).Time", int)
         jam_running = self._get("Clock(Jam).Running", bool)
 
-        # Maintain per-position elapsed counters — reset on box exit.
+        # Phase 1: accumulate delta against the *previous* in-box set.
+        # Only runs when the jam was already running at the previous tick so
+        # that a jam-start clock jump (0 → 120 s) is not mistakenly counted.
+        if (
+            jam_running
+            and self._prev_jam_running
+            and self._prev_jam_clock_ms is not None
+            and jam_clock is not None
+        ):
+            delta = self._prev_jam_clock_ms - jam_clock
+            if delta > 0:  # negative means clock was reset; skip
+                for key in list(self._box_elapsed.keys()):
+                    self._box_elapsed[key] += delta
+
+        # Phase 2: update in-box membership from current PenaltyBox values.
         for team_n in (1, 2):
             for crg_pos in POSITION_MAP.values():
                 key = f"{team_n}.{crg_pos}"
@@ -181,18 +212,6 @@ class ScoreboardClient:
                 elif key not in self._box_elapsed:
                     # Skater just entered — initialise at zero
                     self._box_elapsed[key] = 0
-
-        # Accumulate only when the jam was *already* running at the previous tick.
-        if (
-            jam_running
-            and self._prev_jam_running
-            and self._prev_jam_clock_ms is not None
-            and jam_clock is not None
-        ):
-            delta = self._prev_jam_clock_ms - jam_clock
-            if delta > 0:  # negative means clock was reset; skip
-                for key in list(self._box_elapsed.keys()):
-                    self._box_elapsed[key] += delta
 
         self._prev_jam_clock_ms = jam_clock
         self._prev_jam_running = jam_running
@@ -238,6 +257,7 @@ class ScoreboardClient:
         """Connect, subscribe, and receive updates until disconnect."""
         logger.info("Connecting to %s", uri)
         async with websockets.connect(uri, ping_interval=None) as ws:
+            self._reset_timer_state()
             self._connected = True
             logger.info("Connected to scoreboard WS")
             await ws.send(REGISTER_MSG)
