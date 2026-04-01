@@ -79,12 +79,15 @@ def create_app(scoreboard_host: str = "localhost", scoreboard_port: int = 8000) 
     )
     async def get_live(request: Request) -> LiveState:
         sb = request.app.state.scoreboard_client
-        if not sb.connected:
+        # Snapshot state and connected flag atomically to avoid a race where
+        # the WS drops between the connected check and the state read.
+        state = sb.get_live_state()
+        if not sb.connected and state.game_state is None:
             return JSONResponse(
                 {"detail": "scoreboard not connected — proxy is retrying"},
                 status_code=HTTP_503_SERVICE_UNAVAILABLE,
             )
-        return sb.get_live_state()
+        return state
 
     @app.get(
         "/raw",
@@ -96,7 +99,13 @@ def create_app(scoreboard_host: str = "localhost", scoreboard_port: int = 8000) 
         ),
     )
     async def get_raw(request: Request) -> dict:
-        return request.app.state.scoreboard_client.get_raw_state()
+        sb = request.app.state.scoreboard_client
+        if not sb.connected:
+            return JSONResponse(
+                {"detail": "scoreboard not connected — proxy is retrying"},
+                status_code=HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        return sb.get_raw_state()
 
     @app.get(
         "/health",
@@ -109,6 +118,7 @@ def create_app(scoreboard_host: str = "localhost", scoreboard_port: int = 8000) 
         return HealthState(
             connected=c.connected,
             scoreboard_version=c.get_version(),
+            seconds_since_update=c.get_seconds_since_update(),
         )
 
     return app

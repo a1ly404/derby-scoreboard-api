@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from typing import Any, Dict, Optional
 
 import websockets
@@ -61,9 +62,21 @@ GAME_FIELD_MAP: Dict[str, tuple] = {
 
 
 def _coerce(value: Any, target_type: type) -> Any:
-    """Safely coerce a WS value to the expected Python type."""
+    """Safely coerce a WS value to the expected Python type.
+
+    Special-cases bool so that the string "false" (which Python normally
+    coerces to True as a non-empty string) correctly returns False.
+    The CRG scoreboard sends native JSON booleans, but this guards against
+    proxies or older versions that may stringify them.
+    """
     if value is None:
         return None
+    if target_type is bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.lower() not in ("false", "0", "no", "")
+        return bool(value)
     try:
         return target_type(value)
     except (ValueError, TypeError):
@@ -89,6 +102,7 @@ class ScoreboardClient:
         self.port = port
         self._state: Dict[str, Any] = {}
         self._connected = False
+        self._last_update: Optional[float] = None
         self._task: Optional[asyncio.Task] = None
 
     @property
@@ -99,16 +113,30 @@ class ScoreboardClient:
         """Return a copy of the raw flat state dict."""
         return dict(self._state)
 
+    def get_seconds_since_update(self) -> Optional[float]:
+        """Seconds since the last state update from the scoreboard.
+
+        Returns None if no update has ever been received (e.g. just connected
+        or never connected). Useful for detecting a frozen scoreboard that is
+        technically connected but not sending updates.
+        """
+        if self._last_update is None:
+            return None
+        return round(time.monotonic() - self._last_update, 1)
+
     def get_version(self) -> Optional[str]:
         return self._state.get(_VERSION_KEY)
 
     def _apply_update(self, state_patch: Dict[str, Any]) -> None:
         """Merge a state patch into local state. None values delete keys."""
+        if not isinstance(state_patch, dict):
+            raise TypeError(f"Expected dict state patch, got {type(state_patch).__name__}")
         for key, value in state_patch.items():
             if value is None:
                 self._state.pop(key, None)
             else:
                 self._state[key] = value
+        self._last_update = time.monotonic()
 
     def _get(self, suffix: str, target_type: type = str) -> Any:
         """Get a CurrentGame key by its suffix (part after the prefix)."""
@@ -154,10 +182,15 @@ class ScoreboardClient:
                         logger.warning("Non-JSON message received: %r", raw_msg)
                         continue
 
-                    if "state" in msg:
-                        self._apply_update(msg["state"])
-                    elif "error" in msg:
-                        logger.warning("Scoreboard error: %s", msg["error"])
+                    # Isolate per-message processing so a single bad message
+                    # never kills the entire WS receive loop.
+                    try:
+                        if "state" in msg:
+                            self._apply_update(msg["state"])
+                        elif "error" in msg:
+                            logger.warning("Scoreboard error: %s", msg["error"])
+                    except Exception:
+                        logger.exception("Error processing scoreboard message, skipping: %r", msg)
             except ConnectionClosed:
                 pass
             finally:

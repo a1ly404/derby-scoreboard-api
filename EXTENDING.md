@@ -153,3 +153,60 @@ nssm start DerbyScoreboardAPI
 ```
 
 Or use Task Scheduler with "Start at logon" and "Run whether user is logged on or not".
+
+---
+
+## GitHub Actions CI
+
+Add the file below to the repo so every push and PR automatically runs the
+full test suite in the cloud. No secrets or external services are needed —
+the tests use an in-process mock WebSocket server.
+
+**Create `.github/workflows/test.yml`:**
+
+```yaml
+name: Tests
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: python -m pytest tests/ -v
+```
+
+**What this gives you:**
+- Every push to `main` runs all 33 tests in < 30 seconds.
+- PRs block on red CI — you'll know immediately if a change breaks something.
+- The matrix can be extended to test multiple Python versions by changing
+  `python-version` to a list: `["3.11", "3.12", "3.13"]`.
+
+**To add the file locally and push:**
+
+```bash
+mkdir -p .github/workflows
+# create the file above, then:
+git add .github/workflows/test.yml
+git commit -m "ci: add GitHub Actions test workflow"
+git push
+```
+
+After the first push, the "Actions" tab on the GitHub repo page will show a
+green checkmark (or red ✗ if a test fails).
+
