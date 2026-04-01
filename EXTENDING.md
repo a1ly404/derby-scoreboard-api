@@ -147,17 +147,31 @@ Those keys will then appear in `/raw` and be available for mapping.
 
 ---
 
-## Running in the background as a Windows service (optional)
+## Running during an event
 
-> **Low-RAM machines:** Prefer NSSM over Docker. Docker Desktop on Windows
-> requires WSL2, which reserves 1–2 GB of RAM before a container even starts.
-> The proxy itself uses ~60 MB as a native Python process, so NSSM is the
-> right choice on an older machine.
-
-Use NSSM (Non-Sucking Service Manager):
+The simplest approach — and fine for event use — is to open a terminal and run:
 
 ```powershell
-# First, find your Python executable path:
+python main.py
+```
+
+Leave the terminal open for the duration of the event. The proxy will log
+reconnect attempts if the scoreboard restarts, and resume automatically.
+
+---
+
+## Future improvement: running as a Windows service
+
+If the machine reboots frequently or runs unattended, NSSM (Non-Sucking
+Service Manager) can register the proxy as a Windows service that starts on
+boot and restarts on crash. Not needed for typical event use.
+
+> **Low-RAM machines:** If you do set this up, avoid Docker Desktop — it
+> requires WSL2, which reserves 1–2 GB of RAM before a container even starts.
+> The proxy uses ~60 MB as a native process.
+
+```powershell
+# Find your Python executable path first:
 where python
 # Example: C:\Users\YourName\AppData\Local\Programs\Python\Python313\python.exe
 
@@ -166,11 +180,11 @@ nssm install DerbyScoreboardAPI "C:\Users\YourName\AppData\Local\Programs\Python
 nssm start DerbyScoreboardAPI
 ```
 
-> **Important:** Always use the **full path** to `python.exe`. The `python`
-> command resolves from your user PATH, but Windows services run in a separate
-> system context where user PATH entries are not available.
+> **Important:** Always use the **full path** to `python.exe`. Windows services
+> do not inherit user PATH entries, so `python` alone will fail to resolve.
 
-Or use Task Scheduler with "Start at logon" and "Run whether user is logged on or not".
+Alternatively, Task Scheduler with "Start at logon" and "Run whether user is
+logged on or not" achieves the same without installing NSSM.
 
 ---
 
