@@ -111,6 +111,7 @@ class ScoreboardClient:
         self._connected = False
         self._last_update: Optional[float] = None
         self._task: Optional[asyncio.Task] = None
+        self._box_entry_times: Dict[str, int] = {}  # key: "<team_n>.<crg_pos>" -> epoch ms
 
     @property
     def connected(self) -> bool:
@@ -152,6 +153,24 @@ class ScoreboardClient:
             return None
         return _coerce(raw, target_type)
 
+    def _update_box_entry_times(self) -> None:
+        """Record wall-clock entry time when a skater transitions into the box.
+
+        Called after every state update.  Entry time is set once on the
+        false→True transition and cleared on True→False.
+        """
+        for team_n in (1, 2):
+            for crg_pos in POSITION_MAP.values():
+                key = f"{team_n}.{crg_pos}"
+                in_box = (
+                    self._get(f"Team({team_n}).Position({crg_pos}).PenaltyBox", bool)
+                    or False
+                )
+                if in_box and key not in self._box_entry_times:
+                    self._box_entry_times[key] = int(time.time() * 1000)
+                elif not in_box:
+                    self._box_entry_times.pop(key, None)
+
     def _team(self, n: int) -> TeamState:
         """Build a TeamState for team n using TEAM_FIELD_MAP and POSITION_MAP."""
         prefix = f"Team({n})."
@@ -164,6 +183,7 @@ class ScoreboardClient:
                 name=self._get(f"{prefix}Position({crg_pos}).Name"),
                 number=self._get(f"{prefix}Position({crg_pos}).RosterNumber"),
                 in_box=self._get(f"{prefix}Position({crg_pos}).PenaltyBox", bool) or False,
+                box_entered_at_ms=self._box_entry_times.get(f"{n}.{crg_pos}"),
             )
             for field, crg_pos in POSITION_MAP.items()
         }
@@ -185,6 +205,7 @@ class ScoreboardClient:
         """Connect, subscribe, and receive updates until disconnect."""
         logger.info("Connecting to %s", uri)
         async with websockets.connect(uri, ping_interval=None) as ws:
+            self._box_entry_times.clear()
             self._connected = True
             logger.info("Connected to scoreboard WS")
             await ws.send(REGISTER_MSG)
@@ -203,6 +224,7 @@ class ScoreboardClient:
                     try:
                         if "state" in msg:
                             self._apply_update(msg["state"])
+                            self._update_box_entry_times()
                         elif "error" in msg:
                             logger.warning("Scoreboard error: %s", msg["error"])
                     except Exception:
