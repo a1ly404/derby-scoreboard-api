@@ -9,17 +9,16 @@ The CRG scoreboard broadcasts live data (scores, clocks, jammer info) over WebSo
 ## Requirements
 
 - Python 3.10+ (3.13 recommended)
-- CRG Scoreboard running on the same machine (or accessible on the network)
-- Java 11+ (for running the CRG Scoreboard)
+- CRG Scoreboard already installed and running on port 8000
 
 ## Setup on Windows
 
 ### 1 — Install Python (if not already installed)
 
-Open PowerShell as administrator:
+If you have [Chocolatey](https://chocolatey.org/install), open PowerShell as administrator:
 
 ```powershell
-choco install python --version=3.13.0 -y
+choco install python -y
 ```
 
 Or download directly from [python.org](https://www.python.org/downloads/).
@@ -29,37 +28,11 @@ Verify:
 python --version
 ```
 
-### 2 — Install Java (required to run the CRG Scoreboard)
+### 2 — Start the CRG Scoreboard
 
-```powershell
-choco install temurin21 -y
-```
+Launch the scoreboard the normal way (double-click the provided `.exe` or `.bat` file, or run `java -jar crg-scoreboard.jar`). Confirm it is accessible at `http://localhost:8000` before continuing.
 
-Or download from [adoptium.net](https://adoptium.net/).
-
-Verify:
-```powershell
-java -version
-```
-
-### 3 — Build and start the CRG Scoreboard
-
-From the scoreboard repo directory:
-
-```powershell
-# Download Ant (one-time) if you don't have it:
-choco install ant -y
-
-# Build the jar
-ant compile
-
-# Start the scoreboard (runs on port 8000)
-java -jar lib\crg-scoreboard.jar
-```
-
-Open `http://localhost:8000` in a browser to confirm it's running.
-
-### 4 — Install and start the proxy
+### 3 — Install and start the proxy
 
 ```powershell
 cd derby-scoreboard-api
@@ -138,9 +111,23 @@ Connection status:
 ### `GET /docs`
 Auto-generated interactive OpenAPI docs (Swagger UI).
 
+## Resilience
+
+The proxy is designed to **stay running no matter what**:
+
+- If the scoreboard isn't running when the proxy starts, it will keep retrying every 2 seconds until it connects.
+- If the scoreboard restarts mid-game, the proxy reconnects automatically.
+- `GET /live` returns HTTP 503 while disconnected so pollers know to wait rather than display stale data.
+- `GET /health` always returns, even when disconnected — use it to monitor connection state.
+- Unhandled errors in any endpoint are caught and logged without killing the process.
+
+## Extending
+
+See [EXTENDING.md](EXTENDING.md) for a guide on adding new fields, endpoints, and more.
+
 ## Running tests
 
-```bash
+```powershell
 pytest
 ```
 
@@ -151,8 +138,8 @@ Tests use a mock WebSocket server — no real scoreboard needed.
 1. On startup, a background asyncio task connects to `ws://<scoreboard-host>:<scoreboard-port>/WS/`
 2. Subscribes to `ScoreBoard.CurrentGame` to receive all live game state
 3. Maintains an in-memory state dict, applying incremental patches as the scoreboard broadcasts them
-4. `GET /live` reads from that dict and maps the raw CRG key names to clean JSON fields
-5. Auto-reconnects if the WebSocket drops
+4. `GET /live` reads from that dict and maps raw CRG key names to clean JSON fields via a declarative field map
+5. Auto-reconnects with a 2-second delay on any disconnect or error
 
 ## CRG WebSocket protocol
 

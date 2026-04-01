@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from typing import Any, Dict, Optional
 
 import websockets
@@ -25,16 +26,57 @@ PING_MSG = json.dumps({"action": "Ping"})
 RECONNECT_DELAY = 2  # seconds
 PING_INTERVAL = 30   # seconds
 
-# Mapping of CRG v5+ WS state keys to (model_field_path, type_coercion)
-# All live keys are under ScoreBoard.CurrentGame.*
 _PREFIX = "ScoreBoard.CurrentGame."
 _VERSION_KEY = "ScoreBoard.Version(release)"
 
+# ---------------------------------------------------------------------------
+# Declarative field maps — add a new field in 2 steps:
+#   1. Add a field to the relevant Pydantic model in models.py
+#   2. Add an entry here: "model_field_name": ("CRG.Key.Suffix", python_type)
+# ---------------------------------------------------------------------------
+
+# Fields that appear once per team.  The Team(N). prefix is added automatically.
+TEAM_FIELD_MAP: Dict[str, tuple] = {
+    "name":           ("Name",                         str),
+    "score":          ("Score",                        int),
+    "jam_score":      ("JamScore",                     int),
+    "jammer":         ("Position(Jammer).Name",        str),
+    "jammer_number":  ("Position(Jammer).RosterNumber",str),
+    "lead":           ("Lead",                         bool),
+    "display_lead":   ("DisplayLead",                  bool),
+    "calloff":        ("Calloff",                      bool),
+    "lost":           ("Lost",                         bool),
+    "star_pass":      ("StarPass",                     bool),
+}
+
+# Top-level game fields.  Suffixes are relative to ScoreBoard.CurrentGame.
+GAME_FIELD_MAP: Dict[str, tuple] = {
+    "period":          ("Clock(Period).Number", int),
+    "jam":             ("Clock(Jam).Number",    int),
+    "jam_clock_ms":    ("Clock(Jam).Time",      int),
+    "period_clock_ms": ("Clock(Period).Time",   int),
+    "jam_running":     ("Clock(Jam).Running",   bool),
+    "in_jam":          ("InJam",                bool),
+    "game_state":      ("State",                str),
+}
+
 
 def _coerce(value: Any, target_type: type) -> Any:
-    """Safely coerce a WS value to the expected Python type."""
+    """Safely coerce a WS value to the expected Python type.
+
+    Special-cases bool so that the string "false" (which Python normally
+    coerces to True as a non-empty string) correctly returns False.
+    The CRG scoreboard sends native JSON booleans, but this guards against
+    proxies or older versions that may stringify them.
+    """
     if value is None:
         return None
+    if target_type is bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.lower() not in ("false", "0", "no", "")
+        return bool(value)
     try:
         return target_type(value)
     except (ValueError, TypeError):
@@ -60,6 +102,7 @@ class ScoreboardClient:
         self.port = port
         self._state: Dict[str, Any] = {}
         self._connected = False
+        self._last_update: Optional[float] = None
         self._task: Optional[asyncio.Task] = None
 
     @property
@@ -70,16 +113,30 @@ class ScoreboardClient:
         """Return a copy of the raw flat state dict."""
         return dict(self._state)
 
+    def get_seconds_since_update(self) -> Optional[float]:
+        """Seconds since the last state update from the scoreboard.
+
+        Returns None if no update has ever been received (e.g. just connected
+        or never connected). Useful for detecting a frozen scoreboard that is
+        technically connected but not sending updates.
+        """
+        if self._last_update is None:
+            return None
+        return round(time.monotonic() - self._last_update, 1)
+
     def get_version(self) -> Optional[str]:
         return self._state.get(_VERSION_KEY)
 
     def _apply_update(self, state_patch: Dict[str, Any]) -> None:
         """Merge a state patch into local state. None values delete keys."""
+        if not isinstance(state_patch, dict):
+            raise TypeError(f"Expected dict state patch, got {type(state_patch).__name__}")
         for key, value in state_patch.items():
             if value is None:
                 self._state.pop(key, None)
             else:
                 self._state[key] = value
+        self._last_update = time.monotonic()
 
     def _get(self, suffix: str, target_type: type = str) -> Any:
         """Get a CurrentGame key by its suffix (part after the prefix)."""
@@ -89,35 +146,21 @@ class ScoreboardClient:
         return _coerce(raw, target_type)
 
     def _team(self, n: int) -> TeamState:
-        t = f"Team({n})."
-        return TeamState(
-            name=self._get(f"{t}Name"),
-            score=self._get(f"{t}Score", int),
-            jam_score=self._get(f"{t}JamScore", int),
-            jammer=self._get(f"{t}Position(Jammer).Name"),
-            jammer_number=self._get(f"{t}Position(Jammer).RosterNumber"),
-            lead=self._get(f"{t}Lead", bool),
-            display_lead=self._get(f"{t}DisplayLead", bool),
-            calloff=self._get(f"{t}Calloff", bool),
-            lost=self._get(f"{t}Lost", bool),
-            star_pass=self._get(f"{t}StarPass", bool),
-        )
+        """Build a TeamState for team n using TEAM_FIELD_MAP."""
+        prefix = f"Team({n})."
+        return TeamState(**{
+            field: self._get(prefix + suffix, typ)
+            for field, (suffix, typ) in TEAM_FIELD_MAP.items()
+        })
 
     def get_live_state(self) -> LiveState:
         """Build and return a LiveState model from current raw state."""
-        # Current jam number: UpcomingJamNumber - 1 when in a jam,
-        # otherwise UpcomingJamNumber (the next jam about to start).
-        # Clock(Jam).Number is simpler and always correct for display.
-        jam_num_raw = self._get("Clock(Jam).Number", int)
-
+        game_fields = {
+            field: self._get(suffix, typ)
+            for field, (suffix, typ) in GAME_FIELD_MAP.items()
+        }
         return LiveState(
-            period=self._get("Clock(Period).Number", int),
-            jam=jam_num_raw,
-            jam_clock_ms=self._get("Clock(Jam).Time", int),
-            period_clock_ms=self._get("Clock(Period).Time", int),
-            jam_running=self._get("Clock(Jam).Running", bool),
-            in_jam=self._get("InJam", bool),
-            game_state=self._get("State"),
+            **game_fields,
             team1=self._team(1),
             team2=self._team(2),
         )
@@ -139,10 +182,15 @@ class ScoreboardClient:
                         logger.warning("Non-JSON message received: %r", raw_msg)
                         continue
 
-                    if "state" in msg:
-                        self._apply_update(msg["state"])
-                    elif "error" in msg:
-                        logger.warning("Scoreboard error: %s", msg["error"])
+                    # Isolate per-message processing so a single bad message
+                    # never kills the entire WS receive loop.
+                    try:
+                        if "state" in msg:
+                            self._apply_update(msg["state"])
+                        elif "error" in msg:
+                            logger.warning("Scoreboard error: %s", msg["error"])
+                    except Exception:
+                        logger.exception("Error processing scoreboard message, skipping: %r", msg)
             except ConnectionClosed:
                 pass
             finally:
@@ -164,20 +212,24 @@ class ScoreboardClient:
     async def run(self) -> None:
         """
         Main loop: connect and auto-reconnect on failure.
-        Intended to run as a long-lived background asyncio task.
+        This loop is intentionally infinite and swallows all exceptions so
+        that a scoreboard restart, network blip, or any other error never
+        crashes the proxy process — it just reconnects after RECONNECT_DELAY.
         """
         uri = f"ws://{self.host}:{self.port}/WS/"
         while True:
             self._connected = False
             try:
                 await self._run_once(uri)
+            except asyncio.CancelledError:
+                # Proxy is shutting down — let the cancellation propagate.
+                raise
             except OSError as exc:
-                logger.warning("Connection failed: %s", exc)
-            except Exception as exc:
-                logger.exception("Unexpected error in WS client: %s", exc)
+                logger.warning("Scoreboard unreachable (%s) — retrying in %ds", exc, RECONNECT_DELAY)
+            except Exception:
+                logger.exception("Unexpected WS client error — retrying in %ds", RECONNECT_DELAY)
             finally:
                 self._connected = False
-            logger.info("Reconnecting in %ds...", RECONNECT_DELAY)
             await asyncio.sleep(RECONNECT_DELAY)
 
     def start(self) -> asyncio.Task:

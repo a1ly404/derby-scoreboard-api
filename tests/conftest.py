@@ -90,6 +90,14 @@ class MockScoreboardServer:
             except Exception:
                 pass
 
+    async def push_raw(self, payload: str) -> None:
+        """Send a raw string payload to all clients (for malformed-message testing)."""
+        for ws in list(self._connections):
+            try:
+                await ws.send(payload)
+            except Exception:
+                pass
+
     async def start(self) -> None:
         self._server = await websockets.serve(self._handler, "127.0.0.1", self.port)
 

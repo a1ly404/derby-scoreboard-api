@@ -31,3 +31,8 @@ class LiveState(BaseModel):
 class HealthState(BaseModel):
     connected: bool
     scoreboard_version: Optional[str] = None
+    seconds_since_update: Optional[float] = None
+    """Seconds elapsed since the last state update was received from the scoreboard.
+    None means no update has ever been received (newly connected or never connected).
+    A large value while connected=True indicates the scoreboard may be frozen.
+    """

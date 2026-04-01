@@ -10,7 +10,7 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from client import ScoreboardClient
+from client import ScoreboardClient, _coerce
 from tests.conftest import MockScoreboardServer, INITIAL_STATE
 
 
@@ -164,6 +164,78 @@ async def test_reconnects_after_server_restart(mock_server):
             await asyncio.sleep(0.1)
         # We give reconnect a longer window — this tests the loop exists
         # In CI the full 2s delay means we just wait long enough
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+# ---------------------------------------------------------------------------
+# Bug-regression tests added during QA
+# ---------------------------------------------------------------------------
+
+# Bug: bool("false") == True in Python — coercion of CRG string booleans
+def test_coerce_string_false_returns_false():
+    assert _coerce("false", bool) is False
+
+
+def test_coerce_string_true_returns_true():
+    assert _coerce("true", bool) is True
+
+
+def test_coerce_string_zero_treated_as_false():
+    assert _coerce("0", bool) is False
+
+
+def test_coerce_native_booleans_pass_through_unchanged():
+    assert _coerce(True, bool) is True
+    assert _coerce(False, bool) is False
+
+
+def test_coerce_none_returns_none_for_bool():
+    assert _coerce(None, bool) is None
+
+
+# Bug: _apply_update with non-dict state (e.g. null) must not kill the WS loop
+async def test_null_state_patch_does_not_kill_connection(mock_server):
+    """Sending {"state": null} should not crash the receive loop."""
+    client, task = await _connected_client(mock_server)
+    try:
+        # Push a null state to trigger the non-dict guard
+        await mock_server.push_raw(json.dumps({"state": None}))
+        await asyncio.sleep(0.1)
+        # Client should still be connected
+        assert client.connected is True
+        # And should process subsequent valid updates normally
+        await mock_server.push_update({"ScoreBoard.CurrentGame.Team(1).Score": 99})
+        await asyncio.sleep(0.1)
+        assert client.get_live_state().team1.score == 99
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+async def test_list_state_patch_does_not_kill_connection(mock_server):
+    """Sending {"state": [...]} should not crash the receive loop."""
+    client, task = await _connected_client(mock_server)
+    try:
+        await mock_server.push_raw(json.dumps({"state": ["unexpected", "array"]}))
+        await asyncio.sleep(0.1)
+        assert client.connected is True
+        # Score from initial state should still be intact
+        assert client.get_live_state().team1.score == 42
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+async def test_seconds_since_update_is_populated_after_connect(mock_server):
+    """After receiving the initial state snapshot, seconds_since_update must be a float >= 0."""
+    client, task = await _connected_client(mock_server)
+    try:
+        secs = client.get_seconds_since_update()
+        assert secs is not None
+        assert isinstance(secs, float)
+        assert secs >= 0.0
     finally:
         client.stop()
         await asyncio.sleep(0.05)

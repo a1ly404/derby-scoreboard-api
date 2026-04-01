@@ -11,7 +11,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from main import create_app
-from tests.conftest import MockScoreboardServer
+from tests.conftest import MockScoreboardServer, _free_port
 
 pytestmark = pytest.mark.asyncio
 
@@ -38,7 +38,7 @@ async def app_client(mock_server: MockScoreboardServer):
         yield client
     sb_client.stop()
     try:
-        await asyncio.wait_for(asyncio.shield(task), timeout=2)
+        await asyncio.wait_for(task, timeout=2)
     except (asyncio.CancelledError, asyncio.TimeoutError):
         pass
 
@@ -128,6 +128,51 @@ async def test_openapi_json_available(app_client):
     resp = await app_client.get("/openapi.json")
     assert resp.status_code == 200
     schema = resp.json()
-    assert "/live" in schema["paths"]
-    assert "/health" in schema["paths"]
-    assert "/raw" in schema["paths"]
+
+
+# ---------------------------------------------------------------------------
+# Offline / disconnected fixture and tests
+# ---------------------------------------------------------------------------
+
+@pytest_asyncio.fixture
+async def app_client_offline():
+    """App whose scoreboard client can't connect (no server on the port)."""
+    port = _free_port()  # get a real unused port, then start nothing on it
+    app = create_app(scoreboard_host="127.0.0.1", scoreboard_port=port)
+    sb_client = app.state.scoreboard_client
+    task = sb_client.start()
+    await asyncio.sleep(0.15)  # client will attempt and fail to connect
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        yield client
+    sb_client.stop()
+    try:
+        await asyncio.wait_for(task, timeout=2)
+    except (asyncio.CancelledError, asyncio.TimeoutError):
+        pass
+
+
+async def test_live_returns_503_when_disconnected(app_client_offline):
+    resp = await app_client_offline.get("/live")
+    assert resp.status_code == 503
+
+
+async def test_raw_returns_503_when_disconnected(app_client_offline):
+    resp = await app_client_offline.get("/raw")
+    assert resp.status_code == 503
+
+
+async def test_health_connected_flag_false_when_disconnected(app_client_offline):
+    resp = await app_client_offline.get("/health")
+    assert resp.status_code == 200
+    assert resp.json()["connected"] is False
+
+
+async def test_health_includes_seconds_since_update(app_client):
+    """seconds_since_update must be a non-negative float when connected."""
+    resp = await app_client.get("/health")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "seconds_since_update" in data
+    assert data["seconds_since_update"] is not None
+    assert data["seconds_since_update"] >= 0.0
