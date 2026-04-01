@@ -294,3 +294,161 @@ async def test_seconds_since_update_is_populated_after_connect(mock_server):
     finally:
         client.stop()
         await asyncio.sleep(0.05)
+
+
+# ---------------------------------------------------------------------------
+# box_elapsed_jam_ms tests
+# ---------------------------------------------------------------------------
+
+async def test_box_elapsed_is_none_when_not_in_box(mock_server):
+    """box_elapsed_jam_ms is None for skaters not in the penalty box."""
+    client, task = await _connected_client(mock_server)
+    try:
+        state = client.get_live_state()
+        # Initial state has nobody in box
+        assert state.team1.blocker2.in_box is False
+        assert state.team1.blocker2.box_elapsed_jam_ms is None
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+async def test_box_elapsed_initialises_to_zero_on_box_entry(mock_server):
+    """box_elapsed_jam_ms starts at 0 the moment in_box becomes True (before any jam tick)."""
+    client, task = await _connected_client(mock_server)
+    try:
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Team(1).Position(Blocker1).PenaltyBox": True,
+        })
+        await asyncio.sleep(0.1)
+        state = client.get_live_state()
+        assert state.team1.blocker1.in_box is True
+        assert state.team1.blocker1.box_elapsed_jam_ms == 0
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+async def test_box_elapsed_accumulates_while_jam_running(mock_server):
+    """box_elapsed_jam_ms increases by the jam-clock delta when jam_running is True."""
+    client, task = await _connected_client(mock_server)
+    try:
+        # Put blocker2 in box then start the jam
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Team(1).Position(Blocker2).PenaltyBox": True,
+            "ScoreBoard.CurrentGame.Clock(Jam).Running": True,
+            "ScoreBoard.CurrentGame.Clock(Jam).Time": 60000,
+        })
+        await asyncio.sleep(0.1)
+
+        # Tick the jam clock down 1 second
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Clock(Jam).Time": 59000,
+        })
+        await asyncio.sleep(0.1)
+
+        state = client.get_live_state()
+        assert state.team1.blocker2.box_elapsed_jam_ms == 1000
+
+        # Another 2 seconds
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Clock(Jam).Time": 57000,
+        })
+        await asyncio.sleep(0.1)
+
+        state = client.get_live_state()
+        assert state.team1.blocker2.box_elapsed_jam_ms == 3000
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+async def test_box_elapsed_does_not_accumulate_when_jam_not_running(mock_server):
+    """box_elapsed_jam_ms stays flat between jams (jam_running=False)."""
+    client, task = await _connected_client(mock_server)
+    try:
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Team(2).Position(Jammer).PenaltyBox": True,
+            "ScoreBoard.CurrentGame.Clock(Jam).Running": True,
+            "ScoreBoard.CurrentGame.Clock(Jam).Time": 30000,
+        })
+        await asyncio.sleep(0.1)
+
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Clock(Jam).Time": 28000,
+        })
+        await asyncio.sleep(0.1)
+        state = client.get_live_state()
+        assert state.team2.jammer.box_elapsed_jam_ms == 2000
+
+        # Jam ends — clock stops
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Clock(Jam).Running": False,
+            "ScoreBoard.CurrentGame.Clock(Jam).Time": 28000,
+        })
+        await asyncio.sleep(0.1)
+
+        # Clock update arrives but jam not running — no accumulation
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Clock(Jam).Time": 27000,
+        })
+        await asyncio.sleep(0.1)
+
+        state = client.get_live_state()
+        assert state.team2.jammer.box_elapsed_jam_ms == 2000
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+async def test_box_elapsed_resets_when_skater_leaves_box(mock_server):
+    """box_elapsed_jam_ms returns to None when in_box transitions to False."""
+    client, task = await _connected_client(mock_server)
+    try:
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Team(1).Position(Pivot).PenaltyBox": True,
+            "ScoreBoard.CurrentGame.Clock(Jam).Running": True,
+            "ScoreBoard.CurrentGame.Clock(Jam).Time": 20000,
+        })
+        await asyncio.sleep(0.1)
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Clock(Jam).Time": 10000,
+        })
+        await asyncio.sleep(0.1)
+        state = client.get_live_state()
+        assert state.team1.pivot.box_elapsed_jam_ms == 10000
+
+        # Skater leaves box
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Team(1).Position(Pivot).PenaltyBox": False,
+        })
+        await asyncio.sleep(0.1)
+        state = client.get_live_state()
+        assert state.team1.pivot.in_box is False
+        assert state.team1.pivot.box_elapsed_jam_ms is None
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+async def test_box_elapsed_only_accumulates_for_in_box_skaters(mock_server):
+    """Elapsed time does not accrue for skaters who are not in the box."""
+    client, task = await _connected_client(mock_server)
+    try:
+        # Only blocker3 goes in — blocker1 stays out
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Team(1).Position(Blocker3).PenaltyBox": True,
+            "ScoreBoard.CurrentGame.Clock(Jam).Running": True,
+            "ScoreBoard.CurrentGame.Clock(Jam).Time": 60000,
+        })
+        await asyncio.sleep(0.1)
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Clock(Jam).Time": 55000,
+        })
+        await asyncio.sleep(0.1)
+        state = client.get_live_state()
+        assert state.team1.blocker3.box_elapsed_jam_ms == 5000
+        assert state.team1.blocker1.box_elapsed_jam_ms is None
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)

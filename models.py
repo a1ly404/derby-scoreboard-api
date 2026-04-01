@@ -7,6 +7,12 @@ class SkaterPosition(BaseModel):
     name: Optional[str] = None
     number: Optional[str] = None
     in_box: bool = False
+    box_elapsed_jam_ms: Optional[int] = None
+    """Milliseconds of jam time this skater has been in the penalty box this penalty.
+    None when the skater is not in the box. Resets to 0 each time in_box transitions
+    to True. Pauses naturally between jams (while jam_running is False).
+    Consumer computes remaining = max(0, 30_000 - box_elapsed_jam_ms).
+    """
 
 
 class TeamState(BaseModel):

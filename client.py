@@ -111,6 +111,9 @@ class ScoreboardClient:
         self._connected = False
         self._last_update: Optional[float] = None
         self._task: Optional[asyncio.Task] = None
+        self._box_elapsed: Dict[str, int] = {}  # key: "<team_n>.<crg_pos>"
+        self._prev_jam_clock_ms: Optional[int] = None
+        self._prev_jam_running: Optional[bool] = None
 
     @property
     def connected(self) -> bool:
@@ -152,6 +155,48 @@ class ScoreboardClient:
             return None
         return _coerce(raw, target_type)
 
+    def _tick_box_timers(self) -> None:
+        """Accumulate jam-clock elapsed time for each in-box skater.
+
+        Called after every state update.  Only adds time when jam_running is
+        True and the jam clock has ticked down (positive delta).  Automatically
+        resets a skater's elapsed counter when they leave the box.
+        """
+        jam_clock = self._get("Clock(Jam).Time", int)
+        jam_running = self._get("Clock(Jam).Running", bool)
+
+        # Maintain per-position elapsed counters — reset on box exit.
+        for team_n in (1, 2):
+            for crg_pos in POSITION_MAP.values():
+                key = f"{team_n}.{crg_pos}"
+                in_box = (
+                    self._get(f"Team({team_n}).Position({crg_pos}).PenaltyBox", bool)
+                    or False
+                )
+                if not in_box:
+                    self._box_elapsed.pop(key, None)
+                elif key not in self._box_elapsed:
+                    # Skater just entered — initialise at zero
+                    self._box_elapsed[key] = 0
+
+        # Accumulate only when the jam was *already* running at the previous tick.
+        # Requiring _prev_jam_running=True prevents a large spurious delta from
+        # being counted when jam_running flips True in the same message as a
+        # clock jump (e.g. clock resets to 120 s at the start of a new jam).
+        if (
+            jam_running
+            and self._prev_jam_running
+            and self._prev_jam_clock_ms is not None
+            and jam_clock is not None
+        ):
+            delta = self._prev_jam_clock_ms - jam_clock
+            if delta > 0:  # negative means clock was reset; skip
+                for key in list(self._box_elapsed.keys()):
+                    self._box_elapsed[key] += delta
+
+        self._prev_jam_clock_ms = jam_clock
+        self._prev_jam_running = jam_running
+
     def _team(self, n: int) -> TeamState:
         """Build a TeamState for team n using TEAM_FIELD_MAP and POSITION_MAP."""
         prefix = f"Team({n})."
@@ -164,6 +209,7 @@ class ScoreboardClient:
                 name=self._get(f"{prefix}Position({crg_pos}).Name"),
                 number=self._get(f"{prefix}Position({crg_pos}).RosterNumber"),
                 in_box=self._get(f"{prefix}Position({crg_pos}).PenaltyBox", bool) or False,
+                box_elapsed_jam_ms=self._box_elapsed.get(f"{n}.{crg_pos}"),
             )
             for field, crg_pos in POSITION_MAP.items()
         }
@@ -203,6 +249,7 @@ class ScoreboardClient:
                     try:
                         if "state" in msg:
                             self._apply_update(msg["state"])
+                            self._tick_box_timers()
                         elif "error" in msg:
                             logger.warning("Scoreboard error: %s", msg["error"])
                     except Exception:
