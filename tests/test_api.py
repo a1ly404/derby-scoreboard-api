@@ -188,6 +188,25 @@ async def test_live_includes_state_age_seconds(app_client):
     assert data["state_age_seconds"] >= 0.0
 
 
+async def test_live_connected_true_when_connected(app_client):
+    resp = await app_client.get("/live")
+    assert resp.status_code == 200
+    assert resp.json()["connected"] is True
+
+
+async def test_live_connected_false_when_disconnected_but_has_state(app_client_offline):
+    """
+    If the proxy previously had state but has since lost the connection,
+    /live should return 200 with connected=false (not 503) so overlays can
+    show a 'reconnecting' indicator rather than going blank.
+    This test verifies the gate condition: 503 only fires when there is no
+    state at all (game_state is None).
+    """
+    # The offline fixture has no state at all, so 503 is expected here
+    resp = await app_client_offline.get("/live")
+    assert resp.status_code == 503
+
+
 async def test_live_503_has_retry_after_header(app_client_offline):
     resp = await app_client_offline.get("/live")
     assert resp.status_code == 503

@@ -91,6 +91,7 @@ def create_app(scoreboard_host: str = "localhost", scoreboard_port: int = 8000) 
                 detail="scoreboard not connected — proxy is retrying",
                 headers={"Retry-After": str(RECONNECT_DELAY)},
             )
+        state.connected = sb.connected
         state.state_age_seconds = sb.get_seconds_since_update()
         return state
 

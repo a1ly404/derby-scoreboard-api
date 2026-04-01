@@ -9,7 +9,7 @@ The CRG scoreboard broadcasts live data (scores, clocks, jammer info) over WebSo
 ## Requirements
 
 - Python 3.10+ (3.13 recommended)
-- CRG Scoreboard already installed and running and accessible (default port 8000; host/port configurable via flags)
+- CRG Scoreboard already installed, running, and accessible (default port 8000; host/port configurable via flags)
 
 ## Setup on Windows
 
@@ -63,6 +63,7 @@ Clean, mapped live game state. Poll this at whatever rate suits your overlay (20
 
 ```json
 {
+  "connected": true,
   "period": 1,
   "jam": 4,
   "jam_clock_ms": 89000,
@@ -99,6 +100,10 @@ Clean, mapped live game state. Poll this at whatever rate suits your overlay (20
 ```
 
 > **Clock note:** All `*_ms` fields are in **milliseconds**. E.g. `89000` = 1 minute 29 seconds.
+
+> **`connected`:** `true` when the proxy has an active WebSocket connection to the scoreboard.
+> If `false`, the proxy is reconnecting and `state_age_seconds` tells you how stale the data is.
+> Overlays can use this to show a "RECONNECTING" indicator without a separate call to `/health`.
 
 > **`state_age_seconds`:** Seconds since the proxy last received an update from the scoreboard.
 > `null` means no update has been received yet (proxy just connected). If this grows above a few

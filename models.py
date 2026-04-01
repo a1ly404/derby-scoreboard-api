@@ -17,6 +17,7 @@ class TeamState(BaseModel):
 
 
 class LiveState(BaseModel):
+    connected: bool = False
     period: Optional[int] = None
     jam: Optional[int] = None
     jam_clock_ms: Optional[int] = None
