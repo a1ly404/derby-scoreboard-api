@@ -3,17 +3,26 @@ from typing import Optional
 from pydantic import BaseModel
 
 
+class SkaterPosition(BaseModel):
+    name: Optional[str] = None
+    number: Optional[str] = None
+    in_box: Optional[bool] = None
+
+
 class TeamState(BaseModel):
     name: Optional[str] = None
     score: Optional[int] = None
     jam_score: Optional[int] = None
-    jammer: Optional[str] = None
-    jammer_number: Optional[str] = None
     lead: Optional[bool] = None
     display_lead: Optional[bool] = None
     calloff: Optional[bool] = None
     lost: Optional[bool] = None
     star_pass: Optional[bool] = None
+    jammer: SkaterPosition = SkaterPosition()
+    pivot: SkaterPosition = SkaterPosition()
+    blocker1: SkaterPosition = SkaterPosition()
+    blocker2: SkaterPosition = SkaterPosition()
+    blocker3: SkaterPosition = SkaterPosition()
 
 
 class LiveState(BaseModel):

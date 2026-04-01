@@ -79,10 +79,57 @@ async def test_get_live_state_maps_jammer_info(mock_server):
     client, task = await _connected_client(mock_server)
     try:
         state = client.get_live_state()
-        assert state.team1.jammer == "Speed Demon"
-        assert state.team1.jammer_number == "88"
-        assert state.team2.jammer == "Lightning Bolt"
-        assert state.team2.jammer_number == "7"
+        assert state.team1.jammer.name == "Speed Demon"
+        assert state.team1.jammer.number == "88"
+        assert state.team2.jammer.name == "Lightning Bolt"
+        assert state.team2.jammer.number == "7"
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+async def test_get_live_state_maps_all_positions(mock_server):
+    client, task = await _connected_client(mock_server)
+    try:
+        state = client.get_live_state()
+        t1 = state.team1
+        assert t1.pivot.name == "Iron Curtain"
+        assert t1.pivot.number == "22"
+        assert t1.blocker1.name == "Brick Wall"
+        assert t1.blocker2.name == "Crash Test"
+        assert t1.blocker3.name == "Ricochet"
+        t2 = state.team2
+        assert t2.pivot.name == "Storm Front"
+        assert t2.blocker1.name == "Ground Zero"
+        assert t2.blocker2.name == "Shockwave"
+        assert t2.blocker3.name == "Afterburn"
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+async def test_penalty_box_false_by_default(mock_server):
+    client, task = await _connected_client(mock_server)
+    try:
+        state = client.get_live_state()
+        for pos in (state.team1.jammer, state.team1.pivot,
+                    state.team1.blocker1, state.team1.blocker2, state.team1.blocker3):
+            assert pos.in_box is False
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+async def test_penalty_box_update(mock_server):
+    client, task = await _connected_client(mock_server)
+    try:
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Team(1).Position(Blocker2).PenaltyBox": True,
+        })
+        await asyncio.sleep(0.1)
+        state = client.get_live_state()
+        assert state.team1.blocker2.in_box is True
+        assert state.team1.blocker1.in_box is False
     finally:
         client.stop()
         await asyncio.sleep(0.05)
@@ -113,7 +160,7 @@ async def test_null_value_deletes_key(mock_server):
         })
         await asyncio.sleep(0.1)
         state = client.get_live_state()
-        assert state.team1.jammer is None
+        assert state.team1.jammer.name is None
     finally:
         client.stop()
         await asyncio.sleep(0.05)

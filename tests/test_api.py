@@ -83,8 +83,8 @@ async def test_live_clocks(app_client):
 async def test_live_jammer_names(app_client):
     resp = await app_client.get("/live")
     data = resp.json()
-    assert data["team1"]["jammer"] == "Speed Demon"
-    assert data["team2"]["jammer"] == "Lightning Bolt"
+    assert data["team1"]["jammer"]["name"] == "Speed Demon"
+    assert data["team2"]["jammer"]["name"] == "Lightning Bolt"
 
 
 async def test_live_reflects_score_update(app_client, mock_server):
@@ -238,3 +238,26 @@ async def test_concurrent_live_requests(app_client):
         data = resp.json()
         assert data["team1"]["score"] == 42
         assert data["team2"]["score"] == 37
+
+
+async def test_live_all_positions_present(app_client):
+    resp = await app_client.get("/live")
+    assert resp.status_code == 200
+    data = resp.json()
+    for team in ("team1", "team2"):
+        for pos in ("jammer", "pivot", "blocker1", "blocker2", "blocker3"):
+            assert pos in data[team], f"{team}.{pos} missing from /live"
+            assert "name" in data[team][pos]
+            assert "number" in data[team][pos]
+            assert "in_box" in data[team][pos]
+
+
+async def test_live_penalty_box_update(app_client, mock_server):
+    await mock_server.push_update({
+        "ScoreBoard.CurrentGame.Team(2).Position(Jammer).PenaltyBox": True,
+    })
+    await asyncio.sleep(0.15)
+    resp = await app_client.get("/live")
+    data = resp.json()
+    assert data["team2"]["jammer"]["in_box"] is True
+    assert data["team1"]["jammer"]["in_box"] is False
