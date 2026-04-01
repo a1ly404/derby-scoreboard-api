@@ -1,19 +1,28 @@
 from __future__ import annotations
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+
+class SkaterPosition(BaseModel):
+    name: Optional[str] = None
+    number: Optional[str] = None
+    in_box: bool = False
 
 
 class TeamState(BaseModel):
     name: Optional[str] = None
     score: Optional[int] = None
     jam_score: Optional[int] = None
-    jammer: Optional[str] = None
-    jammer_number: Optional[str] = None
     lead: Optional[bool] = None
     display_lead: Optional[bool] = None
     calloff: Optional[bool] = None
     lost: Optional[bool] = None
     star_pass: Optional[bool] = None
+    jammer: SkaterPosition = Field(default_factory=SkaterPosition)
+    pivot: SkaterPosition = Field(default_factory=SkaterPosition)
+    blocker1: SkaterPosition = Field(default_factory=SkaterPosition)
+    blocker2: SkaterPosition = Field(default_factory=SkaterPosition)
+    blocker3: SkaterPosition = Field(default_factory=SkaterPosition)
 
 
 class LiveState(BaseModel):
@@ -26,8 +35,8 @@ class LiveState(BaseModel):
     in_jam: Optional[bool] = None
     game_state: Optional[str] = None
     state_age_seconds: Optional[float] = None
-    team1: TeamState = TeamState()
-    team2: TeamState = TeamState()
+    team1: TeamState = Field(default_factory=TeamState)
+    team2: TeamState = Field(default_factory=TeamState)
 
 
 class HealthState(BaseModel):

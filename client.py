@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional
 import websockets
 from websockets.exceptions import ConnectionClosed
 
-from models import LiveState, TeamState
+from models import LiveState, SkaterPosition, TeamState
 
 logger = logging.getLogger(__name__)
 
@@ -40,13 +40,20 @@ TEAM_FIELD_MAP: Dict[str, tuple[str, type]] = {
     "name": ("Name", str),
     "score": ("Score", int),
     "jam_score": ("JamScore", int),
-    "jammer": ("Position(Jammer).Name", str),
-    "jammer_number": ("Position(Jammer).RosterNumber", str),
     "lead": ("Lead", bool),
     "display_lead": ("DisplayLead", bool),
     "calloff": ("Calloff", bool),
     "lost": ("Lost", bool),
     "star_pass": ("StarPass", bool),
+}
+
+# On-track positions.  Name maps to the CRG Position() key; dict key maps to TeamState field.
+POSITION_MAP: Dict[str, str] = {
+    "jammer": "Jammer",
+    "pivot": "Pivot",
+    "blocker1": "Blocker1",
+    "blocker2": "Blocker2",
+    "blocker3": "Blocker3",
 }
 
 # Top-level game fields.  Suffixes are relative to ScoreBoard.CurrentGame.
@@ -146,12 +153,21 @@ class ScoreboardClient:
         return _coerce(raw, target_type)
 
     def _team(self, n: int) -> TeamState:
-        """Build a TeamState for team n using TEAM_FIELD_MAP."""
+        """Build a TeamState for team n using TEAM_FIELD_MAP and POSITION_MAP."""
         prefix = f"Team({n})."
-        return TeamState(**{
+        flat_fields = {
             field: self._get(prefix + suffix, typ)
             for field, (suffix, typ) in TEAM_FIELD_MAP.items()
-        })
+        }
+        positions = {
+            field: SkaterPosition(
+                name=self._get(f"{prefix}Position({crg_pos}).Name"),
+                number=self._get(f"{prefix}Position({crg_pos}).RosterNumber"),
+                in_box=self._get(f"{prefix}Position({crg_pos}).PenaltyBox", bool) or False,
+            )
+            for field, crg_pos in POSITION_MAP.items()
+        }
+        return TeamState(**flat_fields, **positions)
 
     def get_live_state(self) -> LiveState:
         """Build and return a LiveState model from current raw state."""
