@@ -36,28 +36,28 @@ _VERSION_KEY = "ScoreBoard.Version(release)"
 # ---------------------------------------------------------------------------
 
 # Fields that appear once per team.  The Team(N). prefix is added automatically.
-TEAM_FIELD_MAP: Dict[str, tuple] = {
-    "name":           ("Name",                         str),
-    "score":          ("Score",                        int),
-    "jam_score":      ("JamScore",                     int),
-    "jammer":         ("Position(Jammer).Name",        str),
-    "jammer_number":  ("Position(Jammer).RosterNumber",str),
-    "lead":           ("Lead",                         bool),
-    "display_lead":   ("DisplayLead",                  bool),
-    "calloff":        ("Calloff",                      bool),
-    "lost":           ("Lost",                         bool),
-    "star_pass":      ("StarPass",                     bool),
+TEAM_FIELD_MAP: Dict[str, tuple[str, type]] = {
+    "name": ("Name", str),
+    "score": ("Score", int),
+    "jam_score": ("JamScore", int),
+    "jammer": ("Position(Jammer).Name", str),
+    "jammer_number": ("Position(Jammer).RosterNumber", str),
+    "lead": ("Lead", bool),
+    "display_lead": ("DisplayLead", bool),
+    "calloff": ("Calloff", bool),
+    "lost": ("Lost", bool),
+    "star_pass": ("StarPass", bool),
 }
 
 # Top-level game fields.  Suffixes are relative to ScoreBoard.CurrentGame.
-GAME_FIELD_MAP: Dict[str, tuple] = {
-    "period":          ("Clock(Period).Number", int),
-    "jam":             ("Clock(Jam).Number",    int),
-    "jam_clock_ms":    ("Clock(Jam).Time",      int),
-    "period_clock_ms": ("Clock(Period).Time",   int),
-    "jam_running":     ("Clock(Jam).Running",   bool),
-    "in_jam":          ("InJam",                bool),
-    "game_state":      ("State",                str),
+GAME_FIELD_MAP: Dict[str, tuple[str, type]] = {
+    "period": ("Clock(Period).Number", int),
+    "jam": ("Clock(Jam).Number", int),
+    "jam_clock_ms": ("Clock(Jam).Time", int),
+    "period_clock_ms": ("Clock(Period).Time", int),
+    "jam_running": ("Clock(Jam).Running", bool),
+    "in_jam": ("InJam", bool),
+    "game_state": ("State", str),
 }
 
 

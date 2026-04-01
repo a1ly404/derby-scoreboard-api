@@ -6,7 +6,7 @@ import logging
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.status import HTTP_503_SERVICE_UNAVAILABLE
@@ -64,12 +64,15 @@ def create_app(scoreboard_host: str = "localhost", scoreboard_port: int = 8000) 
 
     @app.exception_handler(Exception)
     async def _unhandled(request: Request, exc: Exception):
+        if isinstance(exc, asyncio.CancelledError):
+            raise exc
         logger.exception("Unhandled error on %s", request.url.path)
-        return JSONResponse({"error": "internal server error"}, status_code=500)
+        return JSONResponse({"detail": "internal server error"}, status_code=500)
 
     @app.get(
         "/live",
         response_model=LiveState,
+        responses={503: {"description": "Scoreboard not connected — proxy is retrying"}},
         summary="Live game state",
         description=(
             "Returns the current game state mapped to clean, human-readable fields. "
@@ -83,14 +86,15 @@ def create_app(scoreboard_host: str = "localhost", scoreboard_port: int = 8000) 
         # the WS drops between the connected check and the state read.
         state = sb.get_live_state()
         if not sb.connected and state.game_state is None:
-            return JSONResponse(
-                {"detail": "scoreboard not connected — proxy is retrying"},
+            raise HTTPException(
                 status_code=HTTP_503_SERVICE_UNAVAILABLE,
+                detail="scoreboard not connected — proxy is retrying",
             )
         return state
 
     @app.get(
         "/raw",
+        responses={503: {"description": "Scoreboard not connected — proxy is retrying"}},
         summary="Raw scoreboard state",
         description=(
             "Returns the full flat key→value state dict as received from the scoreboard WebSocket. "
@@ -101,9 +105,9 @@ def create_app(scoreboard_host: str = "localhost", scoreboard_port: int = 8000) 
     async def get_raw(request: Request) -> dict:
         sb = request.app.state.scoreboard_client
         if not sb.connected:
-            return JSONResponse(
-                {"detail": "scoreboard not connected — proxy is retrying"},
+            raise HTTPException(
                 status_code=HTTP_503_SERVICE_UNAVAILABLE,
+                detail="scoreboard not connected — proxy is retrying",
             )
         return sb.get_raw_state()
 

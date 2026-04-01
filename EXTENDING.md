@@ -51,7 +51,7 @@ TEAM_FIELD_MAP: Dict[str, tuple] = {
 ```
 
 The key is the `TeamState` field name. The value is a tuple of
-`(CRG key suffix relative to Team(N)., python type)`.
+`(suffix, Python type)` where the suffix is relative to the `Team(N).` prefix.
 
 For a top-level game field, add to `GAME_FIELD_MAP`:
 

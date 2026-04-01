@@ -9,7 +9,7 @@ The CRG scoreboard broadcasts live data (scores, clocks, jammer info) over WebSo
 ## Requirements
 
 - Python 3.10+ (3.13 recommended)
-- CRG Scoreboard already installed and running on port 8000
+- CRG Scoreboard already installed and running and accessible (default port 8000; host/port configurable via flags)
 
 ## Setup on Windows
 
