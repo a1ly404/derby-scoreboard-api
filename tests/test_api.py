@@ -87,6 +87,12 @@ async def test_live_jammer_names(app_client):
     assert data["team2"]["jammer"]["name"] == "Lightning Bolt"
 
 
+async def test_live_includes_timeout_type_field(app_client):
+    resp = await app_client.get("/live")
+    data = resp.json()
+    assert "timeout_type" in data
+
+
 async def test_live_reflects_score_update(app_client, mock_server):
     await mock_server.push_update({
         "ScoreBoard.CurrentGame.Team(2).Score": 50,

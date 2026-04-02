@@ -207,14 +207,40 @@ class ScoreboardClient:
             )
         return TeamState(**flat_fields, **positions)
 
+    @staticmethod
+    def _normalize_timeout_type(game_state: Optional[str], jam_running: Optional[bool]) -> Optional[str]:
+        """Normalize timeout/review from game state; clear once jam is running again."""
+        if jam_running:
+            return None
+        if not game_state:
+            return None
+
+        state = game_state.strip().lower()
+        if "official review" in state:
+            return "official_review"
+        if "official timeout" in state:
+            return "official_timeout"
+        if "team timeout" in state:
+            return "team_timeout"
+        if "timeout" in state:
+            return "timeout"
+        if "review" in state:
+            return "official_review"
+        return None
+
     def get_live_state(self) -> LiveState:
         """Build and return a LiveState model from current raw state."""
         game_fields = {
             field: self._get(suffix, typ)
             for field, (suffix, typ) in GAME_FIELD_MAP.items()
         }
+        timeout_type = self._normalize_timeout_type(
+            game_state=game_fields.get("game_state"),
+            jam_running=game_fields.get("jam_running"),
+        )
         return LiveState(
             **game_fields,
+            timeout_type=timeout_type,
             team1=self._team(1),
             team2=self._team(2),
         )
