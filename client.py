@@ -260,12 +260,16 @@ class ScoreboardClient:
             jam_running=game_fields.get("jam_running"),
             clock_timeout_running=clock_timeout_running,
         )
+        timeout_clock_ms = raw_timeout_clock_ms if timeout_type else None
         return LiveState(
             **game_fields,
+            jam_clock_s=game_fields["jam_clock_ms"] // 1000 if game_fields.get("jam_clock_ms") is not None else None,
+            period_clock_s=game_fields["period_clock_ms"] // 1000 if game_fields.get("period_clock_ms") is not None else None,
             timeout_type=timeout_type,
             # Suppress clock value when no timeout is active — CRG may retain
             # the last timeout time even between jams.
-            timeout_clock_ms=raw_timeout_clock_ms if timeout_type else None,
+            timeout_clock_ms=timeout_clock_ms,
+            timeout_clock_s=timeout_clock_ms // 1000 if timeout_clock_ms is not None else None,
             team1=self._team(1),
             team2=self._team(2),
         )

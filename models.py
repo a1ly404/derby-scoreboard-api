@@ -59,7 +59,9 @@ class LiveState(BaseModel):
     period: Optional[int] = None
     jam: Optional[int] = None
     jam_clock_ms: Optional[int] = None
+    jam_clock_s: Optional[int] = None
     period_clock_ms: Optional[int] = None
+    period_clock_s: Optional[int] = None
     jam_running: Optional[bool] = None
     in_jam: Optional[bool] = None
     game_state: Optional[str] = None
@@ -78,6 +80,7 @@ class LiveState(BaseModel):
             "None when no timeout is active."
         ),
     )
+    timeout_clock_s: Optional[int] = None
     state_age_seconds: Optional[float] = None
     team1: TeamState = Field(default_factory=TeamState)
     team2: TeamState = Field(default_factory=TeamState)
