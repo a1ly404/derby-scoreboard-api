@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
+from unittest.mock import patch
 
 import pytest
 import pytest_asyncio
@@ -138,6 +140,133 @@ async def test_penalty_box_update(mock_server):
         state = client.get_live_state()
         assert state.team1.blocker2.in_box is True
         assert state.team1.blocker1.in_box is False
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+async def test_box_entered_at_ms_is_none_when_not_in_box(mock_server):
+    """box_entered_at_ms is None for skaters not in the penalty box."""
+    client, task = await _connected_client(mock_server)
+    try:
+        state = client.get_live_state()
+        assert state.team1.blocker1.box_entered_at_ms is None
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+async def test_box_entered_at_ms_set_on_entry(mock_server):
+    """box_entered_at_ms is set to a recent epoch-ms timestamp on box entry."""
+    client, task = await _connected_client(mock_server)
+    try:
+        before_ms = int(time.time() * 1000)
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Team(1).Position(Blocker1).PenaltyBox": True,
+        })
+        await asyncio.sleep(0.1)
+        after_ms = int(time.time() * 1000)
+
+        state = client.get_live_state()
+        assert state.team1.blocker1.in_box is True
+        ts = state.team1.blocker1.box_entered_at_ms
+        assert ts is not None
+        assert before_ms <= ts <= after_ms
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+async def test_box_entered_at_ms_cleared_on_exit(mock_server):
+    """box_entered_at_ms returns to None when in_box transitions to False."""
+    client, task = await _connected_client(mock_server)
+    try:
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Team(1).Position(Blocker1).PenaltyBox": True,
+        })
+        await asyncio.sleep(0.1)
+        assert client.get_live_state().team1.blocker1.box_entered_at_ms is not None
+
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Team(1).Position(Blocker1).PenaltyBox": False,
+        })
+        await asyncio.sleep(0.1)
+        state = client.get_live_state()
+        assert state.team1.blocker1.in_box is False
+        assert state.team1.blocker1.box_entered_at_ms is None
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+async def test_box_time_remaining_s_none_when_not_in_box(mock_server):
+    """box_time_remaining_s is None for skaters not in the penalty box."""
+    client, task = await _connected_client(mock_server)
+    try:
+        state = client.get_live_state()
+        assert state.team1.blocker1.box_time_remaining_s is None
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+async def test_box_time_remaining_s_counts_down(mock_server):
+    """box_time_remaining_s reflects correct remaining seconds after box entry."""
+    client, task = await _connected_client(mock_server)
+    try:
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Team(1).Position(Jammer).PenaltyBox": True,
+        })
+        await asyncio.sleep(0.1)
+        state = client.get_live_state()
+        remaining = state.team1.jammer.box_time_remaining_s
+        assert remaining is not None
+        # Should be at most 30 and greater than 0 (entered less than a second ago)
+        assert 0 < remaining <= 30
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+async def test_box_time_remaining_s_zero_when_expired(mock_server):
+    """box_time_remaining_s is 0 when the 30-second window has already passed."""
+    from client import PENALTY_BOX_DURATION_S
+    client, task = await _connected_client(mock_server)
+    try:
+        past_time = time.time() - (PENALTY_BOX_DURATION_S + 5)
+        past_mono = time.monotonic() - (PENALTY_BOX_DURATION_S + 5)
+        with patch("client.time") as mock_time:
+            mock_time.time.return_value = past_time
+            mock_time.monotonic.return_value = past_mono
+            await mock_server.push_update({
+                "ScoreBoard.CurrentGame.Team(2).Position(Pivot).PenaltyBox": True,
+            })
+            await asyncio.sleep(0.1)
+        state = client.get_live_state()
+        assert state.team2.pivot.box_time_remaining_s == 0
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+async def test_box_entered_at_ms_not_reset_on_repeated_true(mock_server):
+    """box_entered_at_ms is not updated if in_box is already True (no re-entry)."""
+    client, task = await _connected_client(mock_server)
+    try:
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Team(1).Position(Blocker1).PenaltyBox": True,
+        })
+        await asyncio.sleep(0.1)
+        first_ts = client.get_live_state().team1.blocker1.box_entered_at_ms
+
+        # Another PenaltyBox=True (e.g. scoreboard resending state)
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Team(1).Position(Blocker1).PenaltyBox": True,
+        })
+        await asyncio.sleep(0.1)
+        second_ts = client.get_live_state().team1.blocker1.box_entered_at_ms
+
+        assert first_ts == second_ts
     finally:
         client.stop()
         await asyncio.sleep(0.05)

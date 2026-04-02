@@ -7,6 +7,21 @@ class SkaterPosition(BaseModel):
     name: Optional[str] = None
     number: Optional[str] = None
     in_box: bool = False
+    box_entered_at_ms: Optional[int] = Field(
+        default=None,
+        description=(
+            "Unix epoch milliseconds when this skater entered the penalty box. "
+            "None when the skater is not in the box. "
+            "Overlay usage: elapsed_ms = Date.now() - box_entered_at_ms"
+        ),
+    )
+    box_time_remaining_s: Optional[int] = Field(
+        default=None,
+        description=(
+            "Whole seconds remaining in the 30-second penalty box. "
+            "None when the skater is not in the box. 0 when time has expired."
+        ),
+    )
 
 
 class TeamState(BaseModel):
