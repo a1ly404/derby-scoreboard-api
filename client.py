@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import time
 from typing import Any, Dict, Optional
 
@@ -23,8 +24,9 @@ REGISTER_MSG = json.dumps({
 
 PING_MSG = json.dumps({"action": "Ping"})
 
-RECONNECT_DELAY = 2  # seconds
-PING_INTERVAL = 30   # seconds
+RECONNECT_DELAY = 2          # seconds
+PING_INTERVAL = 30           # seconds
+PENALTY_BOX_DURATION_S = 30  # seconds
 
 _PREFIX = "ScoreBoard.CurrentGame."
 _VERSION_KEY = "ScoreBoard.Version(release)"
@@ -178,15 +180,21 @@ class ScoreboardClient:
             field: self._get(prefix + suffix, typ)
             for field, (suffix, typ) in TEAM_FIELD_MAP.items()
         }
-        positions = {
-            field: SkaterPosition(
+        positions = {}
+        for field, crg_pos in POSITION_MAP.items():
+            entered = self._box_entry_times.get(f"{n}.{crg_pos}")
+            if entered is not None:
+                elapsed_s = (int(time.time() * 1000) - entered) / 1000
+                remaining: Optional[int] = max(0, math.ceil(PENALTY_BOX_DURATION_S - elapsed_s))
+            else:
+                remaining = None
+            positions[field] = SkaterPosition(
                 name=self._get(f"{prefix}Position({crg_pos}).Name"),
                 number=self._get(f"{prefix}Position({crg_pos}).RosterNumber"),
                 in_box=self._get(f"{prefix}Position({crg_pos}).PenaltyBox", bool) or False,
-                box_entered_at_ms=self._box_entry_times.get(f"{n}.{crg_pos}"),
+                box_entered_at_ms=entered,
+                box_time_remaining_s=remaining,
             )
-            for field, crg_pos in POSITION_MAP.items()
-        }
         return TeamState(**flat_fields, **positions)
 
     def get_live_state(self) -> LiveState:

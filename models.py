@@ -12,6 +12,10 @@ class SkaterPosition(BaseModel):
     None when the skater is not in the box.
     Overlay usage: elapsed_ms = Date.now() - box_entered_at_ms
     """
+    box_time_remaining_s: Optional[int] = None
+    """Whole seconds remaining in the 30-second penalty box.
+    None when the skater is not in the box. 0 when time has expired.
+    """
 
 
 class TeamState(BaseModel):
