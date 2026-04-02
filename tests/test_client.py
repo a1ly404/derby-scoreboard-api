@@ -574,3 +574,110 @@ async def test_client_handles_error_message_from_scoreboard(mock_server):
     finally:
         client.stop()
         await asyncio.sleep(0.05)
+
+
+# ---------------------------------------------------------------------------
+# Star-pass tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_star_pass_false_does_not_swap_jammer_and_pivot(mock_server):
+    """When star_pass is False the jammer and pivot are returned as-is."""
+    client, task = await _connected_client(mock_server)
+    try:
+        state = client.get_live_state()
+        assert state.team1.star_pass is False
+        assert state.team1.jammer.name == "Speed Demon"
+        assert state.team1.pivot.name == "Iron Curtain"
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+@pytest.mark.asyncio
+async def test_star_pass_true_swaps_jammer_and_pivot(mock_server):
+    """When star_pass is True the pivot becomes the jammer and vice-versa."""
+    client, task = await _connected_client(mock_server)
+    try:
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Team(1).StarPass": True,
+        })
+        await asyncio.sleep(0.1)
+        state = client.get_live_state()
+        assert state.team1.star_pass is True
+        # Pivot (Iron Curtain) is now the jammer
+        assert state.team1.jammer.name == "Iron Curtain"
+        assert state.team1.jammer.number == "22"
+        # Original jammer (Speed Demon) is now in the pivot slot
+        assert state.team1.pivot.name == "Speed Demon"
+        assert state.team1.pivot.number == "88"
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+@pytest.mark.asyncio
+async def test_star_pass_swap_does_not_affect_other_team(mock_server):
+    """A star pass for one team must not affect the other team's positions."""
+    client, task = await _connected_client(mock_server)
+    try:
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Team(1).StarPass": True,
+        })
+        await asyncio.sleep(0.1)
+        state = client.get_live_state()
+        # Team 2 is unaffected
+        assert state.team2.star_pass is False
+        assert state.team2.jammer.name == "Lightning Bolt"
+        assert state.team2.pivot.name == "Storm Front"
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+@pytest.mark.asyncio
+async def test_star_pass_cleared_restores_original_positions(mock_server):
+    """When star_pass goes back to False the positions revert to original order."""
+    client, task = await _connected_client(mock_server)
+    try:
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Team(2).StarPass": True,
+        })
+        await asyncio.sleep(0.1)
+        # Confirm swap happened for team 2
+        assert client.get_live_state().team2.jammer.name == "Storm Front"
+
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Team(2).StarPass": False,
+        })
+        await asyncio.sleep(0.1)
+        state = client.get_live_state()
+        assert state.team2.star_pass is False
+        assert state.team2.jammer.name == "Lightning Bolt"
+        assert state.team2.pivot.name == "Storm Front"
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+@pytest.mark.asyncio
+async def test_star_pass_box_tracking_follows_swapped_skater(mock_server):
+    """Penalty-box state stays with the skater, not the position label, after a star pass."""
+    client, task = await _connected_client(mock_server)
+    try:
+        # Put the original jammer (Speed Demon) in the box, then trigger a star pass
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Team(1).Position(Jammer).PenaltyBox": True,
+            "ScoreBoard.CurrentGame.Team(1).StarPass": True,
+        })
+        await asyncio.sleep(0.1)
+        state = client.get_live_state()
+        # After the star pass the original jammer is now in the pivot slot
+        assert state.team1.pivot.name == "Speed Demon"
+        assert state.team1.pivot.in_box is True
+        # The new jammer (Iron Curtain / original pivot) should not be in the box
+        assert state.team1.jammer.name == "Iron Curtain"
+        assert state.team1.jammer.in_box is False
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)

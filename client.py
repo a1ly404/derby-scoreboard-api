@@ -205,6 +205,11 @@ class ScoreboardClient:
                 box_entered_at_ms=entered_ms,
                 box_time_remaining_s=remaining,
             )
+        # When a star pass is successful the pivot receives the jammer cover and
+        # becomes the new jammer.  Swap the two positions so downstream consumers
+        # always read the current jammer from the `jammer` field.
+        if flat_fields.get("star_pass"):
+            positions["jammer"], positions["pivot"] = positions["pivot"], positions["jammer"]
         return TeamState(**flat_fields, **positions)
 
     @staticmethod

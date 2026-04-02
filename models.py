@@ -33,8 +33,22 @@ class TeamState(BaseModel):
     calloff: Optional[bool] = None
     lost: Optional[bool] = None
     star_pass: Optional[bool] = None
-    jammer: SkaterPosition = Field(default_factory=SkaterPosition)
-    pivot: SkaterPosition = Field(default_factory=SkaterPosition)
+    jammer: SkaterPosition = Field(
+        default_factory=SkaterPosition,
+        description=(
+            "The active jammer for this jam. "
+            "When star_pass is True this is the original pivot, who received the jammer cover."
+        ),
+    )
+    pivot: SkaterPosition = Field(
+        default_factory=SkaterPosition,
+        description=(
+            "The pivot for this jam. "
+            "When star_pass is True this slot holds the original jammer, who has removed their star "
+            "and is now skating as a blocker. The pivot label is kept for model simplicity — "
+            "consumers should check star_pass to know this skater's effective role is blocker."
+        ),
+    )
     blocker1: SkaterPosition = Field(default_factory=SkaterPosition)
     blocker2: SkaterPosition = Field(default_factory=SkaterPosition)
     blocker3: SkaterPosition = Field(default_factory=SkaterPosition)
