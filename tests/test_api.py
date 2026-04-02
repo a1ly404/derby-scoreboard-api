@@ -91,6 +91,7 @@ async def test_live_includes_timeout_type_field(app_client):
     resp = await app_client.get("/live")
     data = resp.json()
     assert "timeout_type" in data
+    assert data["timeout_type"] is None
 
 
 async def test_live_reflects_score_update(app_client, mock_server):

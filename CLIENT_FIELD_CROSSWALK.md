@@ -32,10 +32,8 @@ The following are not currently mapped into `GET /live` and should be added for 
 1. Lead jammer skater (explicit display field)
    - Today, lead can be inferred via `team1.lead` / `team2.lead` plus jammer identity, but there is no explicit top-level “lead jammer skater” value.
 
-2. Timeout state and type
-   - Team timeout
-   - Official timeout
-   - Official review
+2. ~~Timeout state and type~~ — Now available via `timeout_type` in `GET /live` (added in PR #7).
+   - `"team_timeout"`, `"official_timeout"`, `"official_review"`, or `null` when not in a timeout.
 
 3. Timeout ownership and counters
    - Which team called timeout/review
@@ -67,7 +65,7 @@ For the fastest basic display, include this overview set:
 - Scores: `team1.score`, `team2.score`, `team1.jam_score`, `team2.jam_score`
 - Lead and star pass indicators: `team1.lead`, `team2.lead`, `team1.star_pass`, `team2.star_pass`
 - Player tracker: all five positions for both teams (name, number, in-box, box timer)
-- Timeout package (to add): timeout type, owner, running flag, remaining ms (when fixed), team timeout counts, official review status, post-timeout phase indicator
+- Timeout package (partially available): `timeout_type` is now in `GET /live`. Still to add: timeout owner, running flag, remaining ms (when fixed), team timeout counts, official review status, post-timeout phase indicator
 
 ## 5) Follow-up implementation plan
 
