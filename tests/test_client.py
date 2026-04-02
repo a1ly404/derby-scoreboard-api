@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from unittest.mock import patch
 
 import pytest
 import pytest_asyncio
@@ -232,13 +233,15 @@ async def test_box_time_remaining_s_zero_when_expired(mock_server):
     from client import PENALTY_BOX_DURATION_S
     client, task = await _connected_client(mock_server)
     try:
-        await mock_server.push_update({
-            "ScoreBoard.CurrentGame.Team(2).Position(Pivot).PenaltyBox": True,
-        })
-        await asyncio.sleep(0.1)
-        # Back-date the entry time so the penalty has already expired
-        key = f"2.Pivot"
-        client._box_entry_times[key] = int(time.time() * 1000) - (PENALTY_BOX_DURATION_S + 5) * 1000
+        past_time = time.time() - (PENALTY_BOX_DURATION_S + 5)
+        past_mono = time.monotonic() - (PENALTY_BOX_DURATION_S + 5)
+        with patch("client.time") as mock_time:
+            mock_time.time.return_value = past_time
+            mock_time.monotonic.return_value = past_mono
+            await mock_server.push_update({
+                "ScoreBoard.CurrentGame.Team(2).Position(Pivot).PenaltyBox": True,
+            })
+            await asyncio.sleep(0.1)
         state = client.get_live_state()
         assert state.team2.pivot.box_time_remaining_s == 0
     finally:
