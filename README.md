@@ -71,6 +71,7 @@ Clean, mapped live game state. Poll this at whatever rate suits your overlay (20
   "jam_running": true,
   "in_jam": true,
   "game_state": "Running",
+  "timeout_type": null,
   "state_age_seconds": 0.1,
   "team1": {
     "name": "Home Team",
@@ -109,6 +110,10 @@ Clean, mapped live game state. Poll this at whatever rate suits your overlay (20
 > `null` means no update has been received yet (proxy just connected). If this grows above a few
 > seconds while `connected` is `true`, the scoreboard may be frozen.
 
+> **`timeout_type`:** Normalized timeout/review state derived from `game_state`.
+> Values: `team_timeout`, `official_timeout`, `official_review`, `timeout`, or `null`.
+> It is forced to `null` when `jam_running` is `true` (play resumed).
+
 ### `GET /raw`
 Full flat state dict as received from the scoreboard WebSocket. Useful for discovering all available fields or debugging.
 
@@ -135,6 +140,10 @@ The proxy is designed to **stay running no matter what**:
 ## Extending
 
 See [EXTENDING.md](EXTENDING.md) for a guide on adding new fields, endpoints, and more.
+
+## Client display field crosswalk
+
+For a client-facing summary of requested scoreboard fields, current `/live` coverage, and missing timeout/review data needed for broadcast UI, see [CLIENT_FIELD_CROSSWALK.md](CLIENT_FIELD_CROSSWALK.md).
 
 ## Running tests
 

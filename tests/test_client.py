@@ -320,6 +320,49 @@ async def test_lead_and_display_lead(mock_server):
         await asyncio.sleep(0.05)
 
 
+@pytest.mark.parametrize(
+    "game_state, expected",
+    [
+        ("Team Timeout", "team_timeout"),
+        ("Official Timeout", "official_timeout"),
+        ("Official Review", "official_review"),
+    ],
+)
+async def test_timeout_type_from_game_state(mock_server, game_state, expected):
+    client, task = await _connected_client(mock_server)
+    try:
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Clock(Jam).Running": False,
+            "ScoreBoard.CurrentGame.State": game_state,
+        })
+        await asyncio.sleep(0.1)
+        state = client.get_live_state()
+        assert state.timeout_type == expected
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+async def test_timeout_type_clears_when_jam_running(mock_server):
+    client, task = await _connected_client(mock_server)
+    try:
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Clock(Jam).Running": False,
+            "ScoreBoard.CurrentGame.State": "Official Timeout",
+        })
+        await asyncio.sleep(0.1)
+        assert client.get_live_state().timeout_type == "official_timeout"
+
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Clock(Jam).Running": True,
+        })
+        await asyncio.sleep(0.1)
+        assert client.get_live_state().timeout_type is None
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
 async def test_raw_state_returns_full_dict(mock_server):
     client, task = await _connected_client(mock_server)
     try:

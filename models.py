@@ -49,6 +49,14 @@ class LiveState(BaseModel):
     jam_running: Optional[bool] = None
     in_jam: Optional[bool] = None
     game_state: Optional[str] = None
+    timeout_type: Optional[str] = Field(
+        default=None,
+        description=(
+            "Normalized timeout/review state. "
+            "One of: team_timeout, official_timeout, official_review, timeout, or null. "
+            "Resets to null when jam_running is true."
+        ),
+    )
     state_age_seconds: Optional[float] = None
     team1: TeamState = Field(default_factory=TeamState)
     team2: TeamState = Field(default_factory=TeamState)
