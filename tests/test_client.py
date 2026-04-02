@@ -16,9 +16,6 @@ from client import ScoreboardClient, _coerce
 from tests.conftest import MockScoreboardServer, INITIAL_STATE
 
 
-pytestmark = pytest.mark.asyncio
-
-
 async def _connected_client(server: MockScoreboardServer) -> ScoreboardClient:
     """Start a client, wait for it to receive the initial snapshot."""
     client = ScoreboardClient(host="127.0.0.1", port=server.port)
@@ -31,6 +28,7 @@ async def _connected_client(server: MockScoreboardServer) -> ScoreboardClient:
     return client, task
 
 
+@pytest.mark.asyncio
 async def test_client_connects_and_receives_initial_state(mock_server):
     client, task = await _connected_client(mock_server)
     try:
@@ -41,6 +39,7 @@ async def test_client_connects_and_receives_initial_state(mock_server):
         await asyncio.sleep(0.05)
 
 
+@pytest.mark.asyncio
 async def test_get_live_state_maps_team_names(mock_server):
     client, task = await _connected_client(mock_server)
     try:
@@ -52,6 +51,7 @@ async def test_get_live_state_maps_team_names(mock_server):
         await asyncio.sleep(0.05)
 
 
+@pytest.mark.asyncio
 async def test_get_live_state_maps_scores(mock_server):
     client, task = await _connected_client(mock_server)
     try:
@@ -63,6 +63,7 @@ async def test_get_live_state_maps_scores(mock_server):
         await asyncio.sleep(0.05)
 
 
+@pytest.mark.asyncio
 async def test_get_live_state_maps_clocks(mock_server):
     client, task = await _connected_client(mock_server)
     try:
@@ -77,6 +78,7 @@ async def test_get_live_state_maps_clocks(mock_server):
         await asyncio.sleep(0.05)
 
 
+@pytest.mark.asyncio
 async def test_get_live_state_maps_jammer_info(mock_server):
     client, task = await _connected_client(mock_server)
     try:
@@ -90,6 +92,7 @@ async def test_get_live_state_maps_jammer_info(mock_server):
         await asyncio.sleep(0.05)
 
 
+@pytest.mark.asyncio
 async def test_get_live_state_maps_all_positions(mock_server):
     client, task = await _connected_client(mock_server)
     try:
@@ -110,6 +113,7 @@ async def test_get_live_state_maps_all_positions(mock_server):
         await asyncio.sleep(0.05)
 
 
+@pytest.mark.asyncio
 async def test_penalty_box_defaults_false_when_key_absent(mock_server):
     """When CRG has never sent a PenaltyBox key, in_box must default to False (not None)."""
     client, task = await _connected_client(mock_server)
@@ -130,6 +134,7 @@ async def test_penalty_box_defaults_false_when_key_absent(mock_server):
         await asyncio.sleep(0.05)
 
 
+@pytest.mark.asyncio
 async def test_penalty_box_update(mock_server):
     client, task = await _connected_client(mock_server)
     try:
@@ -145,6 +150,7 @@ async def test_penalty_box_update(mock_server):
         await asyncio.sleep(0.05)
 
 
+@pytest.mark.asyncio
 async def test_box_entered_at_ms_is_none_when_not_in_box(mock_server):
     """box_entered_at_ms is None for skaters not in the penalty box."""
     client, task = await _connected_client(mock_server)
@@ -156,6 +162,7 @@ async def test_box_entered_at_ms_is_none_when_not_in_box(mock_server):
         await asyncio.sleep(0.05)
 
 
+@pytest.mark.asyncio
 async def test_box_entered_at_ms_set_on_entry(mock_server):
     """box_entered_at_ms is set to a recent epoch-ms timestamp on box entry."""
     client, task = await _connected_client(mock_server)
@@ -177,6 +184,7 @@ async def test_box_entered_at_ms_set_on_entry(mock_server):
         await asyncio.sleep(0.05)
 
 
+@pytest.mark.asyncio
 async def test_box_entered_at_ms_cleared_on_exit(mock_server):
     """box_entered_at_ms returns to None when in_box transitions to False."""
     client, task = await _connected_client(mock_server)
@@ -199,6 +207,7 @@ async def test_box_entered_at_ms_cleared_on_exit(mock_server):
         await asyncio.sleep(0.05)
 
 
+@pytest.mark.asyncio
 async def test_box_time_remaining_s_none_when_not_in_box(mock_server):
     """box_time_remaining_s is None for skaters not in the penalty box."""
     client, task = await _connected_client(mock_server)
@@ -210,6 +219,7 @@ async def test_box_time_remaining_s_none_when_not_in_box(mock_server):
         await asyncio.sleep(0.05)
 
 
+@pytest.mark.asyncio
 async def test_box_time_remaining_s_counts_down(mock_server):
     """box_time_remaining_s reflects correct remaining seconds after box entry."""
     client, task = await _connected_client(mock_server)
@@ -228,6 +238,7 @@ async def test_box_time_remaining_s_counts_down(mock_server):
         await asyncio.sleep(0.05)
 
 
+@pytest.mark.asyncio
 async def test_box_time_remaining_s_zero_when_expired(mock_server):
     """box_time_remaining_s is 0 when the 30-second window has already passed."""
     from client import PENALTY_BOX_DURATION_S
@@ -249,6 +260,7 @@ async def test_box_time_remaining_s_zero_when_expired(mock_server):
         await asyncio.sleep(0.05)
 
 
+@pytest.mark.asyncio
 async def test_box_entered_at_ms_not_reset_on_repeated_true(mock_server):
     """box_entered_at_ms is not updated if in_box is already True (no re-entry)."""
     client, task = await _connected_client(mock_server)
@@ -272,6 +284,7 @@ async def test_box_entered_at_ms_not_reset_on_repeated_true(mock_server):
         await asyncio.sleep(0.05)
 
 
+@pytest.mark.asyncio
 async def test_state_update_reflects_new_score(mock_server):
     client, task = await _connected_client(mock_server)
     try:
@@ -288,6 +301,7 @@ async def test_state_update_reflects_new_score(mock_server):
         await asyncio.sleep(0.05)
 
 
+@pytest.mark.asyncio
 async def test_null_value_deletes_key(mock_server):
     client, task = await _connected_client(mock_server)
     try:
@@ -303,6 +317,7 @@ async def test_null_value_deletes_key(mock_server):
         await asyncio.sleep(0.05)
 
 
+@pytest.mark.asyncio
 async def test_lead_and_display_lead(mock_server):
     client, task = await _connected_client(mock_server)
     try:
@@ -328,6 +343,7 @@ async def test_lead_and_display_lead(mock_server):
         ("Official Review", "official_review"),
     ],
 )
+@pytest.mark.asyncio
 async def test_timeout_type_from_game_state(mock_server, game_state, expected):
     client, task = await _connected_client(mock_server)
     try:
@@ -343,6 +359,7 @@ async def test_timeout_type_from_game_state(mock_server, game_state, expected):
         await asyncio.sleep(0.05)
 
 
+@pytest.mark.asyncio
 async def test_timeout_type_clears_when_jam_running(mock_server):
     client, task = await _connected_client(mock_server)
     try:
@@ -363,6 +380,7 @@ async def test_timeout_type_clears_when_jam_running(mock_server):
         await asyncio.sleep(0.05)
 
 
+@pytest.mark.asyncio
 async def test_raw_state_returns_full_dict(mock_server):
     client, task = await _connected_client(mock_server)
     try:
@@ -374,6 +392,7 @@ async def test_raw_state_returns_full_dict(mock_server):
         await asyncio.sleep(0.05)
 
 
+@pytest.mark.asyncio
 async def test_reconnects_after_server_restart(mock_server):
     client, task = await _connected_client(mock_server)
     try:
@@ -423,6 +442,7 @@ def test_coerce_none_returns_none_for_bool():
 
 
 # Bug: _apply_update with non-dict state (e.g. null) must not kill the WS loop
+@pytest.mark.asyncio
 async def test_null_state_patch_does_not_kill_connection(mock_server):
     """Sending {"state": null} should not crash the receive loop."""
     client, task = await _connected_client(mock_server)
@@ -441,6 +461,7 @@ async def test_null_state_patch_does_not_kill_connection(mock_server):
         await asyncio.sleep(0.05)
 
 
+@pytest.mark.asyncio
 async def test_list_state_patch_does_not_kill_connection(mock_server):
     """Sending {"state": [...]} should not crash the receive loop."""
     client, task = await _connected_client(mock_server)
@@ -455,6 +476,7 @@ async def test_list_state_patch_does_not_kill_connection(mock_server):
         await asyncio.sleep(0.05)
 
 
+@pytest.mark.asyncio
 async def test_seconds_since_update_is_populated_after_connect(mock_server):
     """After receiving the initial state snapshot, seconds_since_update must be a float >= 0."""
     client, task = await _connected_client(mock_server)
@@ -463,6 +485,92 @@ async def test_seconds_since_update_is_populated_after_connect(mock_server):
         assert secs is not None
         assert isinstance(secs, float)
         assert secs >= 0.0
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+# Additional coverage tests
+# ---------------------------------------------------------------------------
+
+def test_coerce_invalid_type_returns_original_value():
+    """Test _coerce with invalid type conversion that raises ValueError or TypeError."""
+    # Try to convert "invalid" to int - should return original value
+    assert _coerce("invalid", int) == "invalid"
+    
+    # Try to convert None to a complex type that would raise TypeError
+    class TestClass:
+        def __init__(self, value):
+            if value is None:
+                raise TypeError("Cannot create TestClass from None")
+            self.value = value
+    
+    assert _coerce(None, TestClass) is None
+
+
+def test_normalize_timeout_type_additional_cases():
+    """Test additional timeout type case variants."""
+    from client import ScoreboardClient
+    
+    # Test generic "timeout" case
+    assert ScoreboardClient._normalize_timeout_type("Timeout", False) == "timeout"
+    
+    # Test "review" case
+    assert ScoreboardClient._normalize_timeout_type("Review", False) == "official_review"
+    
+    # Test unrecognized state
+    assert ScoreboardClient._normalize_timeout_type("Running", False) is None
+    
+    # Test null/empty cases
+    assert ScoreboardClient._normalize_timeout_type("", False) is None
+
+
+@pytest.mark.asyncio  
+async def test_client_handles_json_decode_error(mock_server):
+    """Test that client handles non-JSON messages gracefully."""
+    client, task = await _connected_client(mock_server)
+    try:
+        # Send an invalid JSON message through the mock server
+        await mock_server.push_raw("invalid json {")
+        await asyncio.sleep(0.1)
+        
+        # Client should still be connected and functioning
+        assert client.connected is True
+        state = client.get_live_state()
+        assert state.team1.score == 42  # Original state should be intact
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+@pytest.mark.asyncio
+async def test_client_handles_message_processing_error(mock_server):
+    """Test that client handles errors in message processing gracefully.""" 
+    client, task = await _connected_client(mock_server)
+    try:
+        # Send a message with state that would cause processing issues
+        await mock_server.push_update({"invalid": "structure that might cause errors"})
+        await asyncio.sleep(0.1)
+        
+        # Client should still be connected
+        assert client.connected is True
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+@pytest.mark.asyncio
+async def test_client_handles_error_message_from_scoreboard(mock_server):
+    """Test client handles error messages from scoreboard.""" 
+    import json
+    client, task = await _connected_client(mock_server)
+    try:
+        # Send an error message as the scoreboard might
+        await mock_server.push_raw(json.dumps({"error": "Test error from scoreboard"}))
+        await asyncio.sleep(0.1)
+        
+        # Client should still be connected despite error
+        assert client.connected is True
     finally:
         client.stop()
         await asyncio.sleep(0.05)
