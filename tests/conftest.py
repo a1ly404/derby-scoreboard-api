@@ -21,6 +21,8 @@ INITIAL_STATE: Dict[str, Any] = {
     "ScoreBoard.CurrentGame.Clock(Period).Time": 900000,
     "ScoreBoard.CurrentGame.Clock(Period).Running": True,
     "ScoreBoard.CurrentGame.Clock(Period).Number": 1,
+    "ScoreBoard.CurrentGame.Clock(Timeout).Running": False,
+    "ScoreBoard.CurrentGame.Clock(Timeout).Time": 0,
     "ScoreBoard.CurrentGame.Team(1).Name": "Home Team",
     "ScoreBoard.CurrentGame.Team(1).FullName": "The Home Team",
     "ScoreBoard.CurrentGame.Team(1).Score": 42,

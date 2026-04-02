@@ -71,6 +71,13 @@ class LiveState(BaseModel):
             "Resets to null when jam_running is true."
         ),
     )
+    timeout_clock_ms: Optional[int] = Field(
+        default=None,
+        description=(
+            "Timeout clock value in milliseconds as reported by CRG Clock(Timeout). "
+            "None when no timeout is active."
+        ),
+    )
     state_age_seconds: Optional[float] = None
     team1: TeamState = Field(default_factory=TeamState)
     team2: TeamState = Field(default_factory=TeamState)

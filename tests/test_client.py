@@ -511,18 +511,24 @@ def test_coerce_invalid_type_returns_original_value():
 def test_normalize_timeout_type_additional_cases():
     """Test additional timeout type case variants."""
     from client import ScoreboardClient
-    
+
     # Test generic "timeout" case
     assert ScoreboardClient._normalize_timeout_type("Timeout", False) == "timeout"
-    
+
     # Test "review" case
     assert ScoreboardClient._normalize_timeout_type("Review", False) == "official_review"
-    
+
     # Test unrecognized state
     assert ScoreboardClient._normalize_timeout_type("Running", False) is None
-    
+
     # Test null/empty cases
     assert ScoreboardClient._normalize_timeout_type("", False) is None
+
+    # clock_timeout_running=True fires even when State hasn't updated
+    assert ScoreboardClient._normalize_timeout_type("Running", False, clock_timeout_running=True) == "timeout"
+
+    # clock_timeout_running=True does not override jam_running guard
+    assert ScoreboardClient._normalize_timeout_type("Timeout", True, clock_timeout_running=True) is None
 
 
 @pytest.mark.asyncio  
@@ -678,6 +684,89 @@ async def test_star_pass_box_tracking_follows_swapped_skater(mock_server):
         # The new jammer (Iron Curtain / original pivot) should not be in the box
         assert state.team1.jammer.name == "Iron Curtain"
         assert state.team1.jammer.in_box is False
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+# ---------------------------------------------------------------------------
+# Timeout clock tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_timeout_type_from_clock_running_when_state_unchanged(mock_server):
+    """Clock(Timeout).Running=True triggers timeout_type even if State hasn't updated."""
+    client, task = await _connected_client(mock_server)
+    try:
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Clock(Jam).Running": False,
+            "ScoreBoard.CurrentGame.Clock(Timeout).Running": True,
+            "ScoreBoard.CurrentGame.Clock(Timeout).Time": 15000,
+            # State deliberately left as "Running" to simulate CRG lag
+        })
+        await asyncio.sleep(0.1)
+        state = client.get_live_state()
+        assert state.timeout_type == "timeout"
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+@pytest.mark.asyncio
+async def test_timeout_clock_ms_populated_when_timeout_active(mock_server):
+    """timeout_clock_ms reflects Clock(Timeout).Time when a timeout is active."""
+    client, task = await _connected_client(mock_server)
+    try:
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Clock(Jam).Running": False,
+            "ScoreBoard.CurrentGame.Clock(Timeout).Running": True,
+            "ScoreBoard.CurrentGame.Clock(Timeout).Time": 23000,
+            "ScoreBoard.CurrentGame.State": "Timeout",
+        })
+        await asyncio.sleep(0.1)
+        state = client.get_live_state()
+        assert state.timeout_type == "timeout"
+        assert state.timeout_clock_ms == 23000
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+@pytest.mark.asyncio
+async def test_timeout_clock_ms_none_when_not_in_timeout(mock_server):
+    """timeout_clock_ms is None when no timeout is active."""
+    client, task = await _connected_client(mock_server)
+    try:
+        state = client.get_live_state()
+        assert state.timeout_type is None
+        assert state.timeout_clock_ms is None
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+@pytest.mark.asyncio
+async def test_timeout_clock_ms_cleared_when_jam_starts(mock_server):
+    """timeout_clock_ms goes back to None when a jam starts after a timeout."""
+    client, task = await _connected_client(mock_server)
+    try:
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Clock(Jam).Running": False,
+            "ScoreBoard.CurrentGame.Clock(Timeout).Running": True,
+            "ScoreBoard.CurrentGame.Clock(Timeout).Time": 30000,
+            "ScoreBoard.CurrentGame.State": "Timeout",
+        })
+        await asyncio.sleep(0.1)
+        assert client.get_live_state().timeout_clock_ms == 30000
+
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Clock(Jam).Running": True,
+            "ScoreBoard.CurrentGame.Clock(Timeout).Running": False,
+        })
+        await asyncio.sleep(0.1)
+        state = client.get_live_state()
+        assert state.timeout_type is None
+        assert state.timeout_clock_ms is None
     finally:
         client.stop()
         await asyncio.sleep(0.05)

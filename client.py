@@ -67,6 +67,7 @@ GAME_FIELD_MAP: Dict[str, tuple[str, type]] = {
     "jam_running": ("Clock(Jam).Running", bool),
     "in_jam": ("InJam", bool),
     "game_state": ("State", str),
+    "timeout_clock_ms": ("Clock(Timeout).Time", int),
 }
 
 
@@ -213,21 +214,32 @@ class ScoreboardClient:
         return TeamState(**flat_fields, **positions)
 
     @staticmethod
-    def _normalize_timeout_type(game_state: Optional[str], jam_running: Optional[bool]) -> Optional[str]:
-        """Normalize timeout/review from game state; clear once jam is running again."""
+    def _normalize_timeout_type(
+        game_state: Optional[str],
+        jam_running: Optional[bool],
+        clock_timeout_running: Optional[bool] = None,
+    ) -> Optional[str]:
+        """Normalize timeout/review from game state and timeout clock.
+
+        Uses Clock(Timeout).Running as the authoritative indicator that a
+        timeout is active — this fires even when CRG's State field hasn't
+        updated yet or only reads "Timeout" without a type qualifier.
+        game_state is then used solely to refine the type label.
+        Returns None when a jam is running (timeout is over).
+        """
         if jam_running:
             return None
-        if not game_state:
-            return None
 
-        state = game_state.strip().lower()
+        in_timeout = bool(clock_timeout_running)
+        state = (game_state or "").strip().lower()
+
         if "official review" in state:
             return "official_review"
         if "official timeout" in state:
             return "official_timeout"
         if "team timeout" in state:
             return "team_timeout"
-        if "timeout" in state:
+        if "timeout" in state or in_timeout:
             return "timeout"
         if "review" in state:
             return "official_review"
@@ -239,13 +251,21 @@ class ScoreboardClient:
             field: self._get(suffix, typ)
             for field, (suffix, typ) in GAME_FIELD_MAP.items()
         }
+        clock_timeout_running = self._get("Clock(Timeout).Running", bool)
+        # Pop timeout_clock_ms so we can conditionally suppress it below
+        # without it conflicting with the **game_fields unpack.
+        raw_timeout_clock_ms = game_fields.pop("timeout_clock_ms", None)
         timeout_type = self._normalize_timeout_type(
             game_state=game_fields.get("game_state"),
             jam_running=game_fields.get("jam_running"),
+            clock_timeout_running=clock_timeout_running,
         )
         return LiveState(
             **game_fields,
             timeout_type=timeout_type,
+            # Suppress clock value when no timeout is active — CRG may retain
+            # the last timeout time even between jams.
+            timeout_clock_ms=raw_timeout_clock_ms if timeout_type else None,
             team1=self._team(1),
             team2=self._team(2),
         )
