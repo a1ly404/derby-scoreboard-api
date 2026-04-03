@@ -42,6 +42,137 @@ python main.py
 
 The API is now available at `http://localhost:5001`.
 
+## One-click update for non-technical users (Windows)
+
+To update with minimal interruption, this repo includes:
+
+- `updater.config.json` (single config file to choose update mode and settings)
+- `Run-Updater.cmd` (double-click entry point that reads config and picks mode)
+- `scripts/` (all automation scripts — you can ignore these)
+
+For non-technical users, this is the only workflow you need:
+
+1. Open `updater.config.json`
+2. Set `mode` to `manual` or `auto`
+3. Double-click `Run-Updater.cmd`
+
+What it does:
+
+1. Runs `git pull --ff-only`
+2. Installs Python dependencies from `requirements.txt`
+3. Starts a standby API backend on an alternate port
+4. Swaps the stable proxy target to the healthy standby backend
+5. Stops the old backend after cutover
+6. Writes logs to `logs/updater/`
+
+### Blue/green ports
+
+- Public API (stable): `5001` via `proxy.py`
+- Backend A: `5002`
+- Backend B: `5003`
+
+The proxy reads `runtime/active_backend_port.txt` and forwards requests to whichever backend port is currently active.
+
+### Setup (one-time)
+
+1. Ensure `git`, `python`, and `pip` are available in PATH.
+2. Put a shortcut to `Run-Updater.cmd` on the Desktop.
+3. Ensure port `5001` is free for the stable proxy listener.
+
+On first run, the updater starts both proxy and backend processes automatically.
+
+### Run update
+
+Double-click `Run-Updater.cmd`.
+
+Set `mode` in `updater.config.json`:
+
+- `manual`: runs one blue/green update now
+- `auto`: starts continuous watcher mode
+
+Tip: keys that start with `_comment_` are just helper notes for humans and are ignored by the launcher.
+
+After a successful manual update, the launcher prints the `Health` and `Live` URLs using the current machine hostname so you can share them with the client team.
+
+Example config:
+
+```json
+{
+  "mode": "manual",
+  "branch": "main",
+  "checkIntervalSeconds": 120,
+  "scoreboardHost": "localhost",
+  "scoreboardPort": 8000,
+  "healthUrl": "http://localhost:5001/health"
+}
+```
+
+Advanced (PowerShell):
+
+```powershell
+./Run-Updater.ps1
+```
+
+## Optional automatic updates from main (no button click)
+
+If you want unattended updates, this repo includes optional tools:
+
+- `Auto-Update-API.ps1` (in `scripts/`; watches `origin/main` and triggers `Update-API.ps1` only when new commits exist)
+- `Start-AutoUpdate.cmd` replaced by `Run-Updater.cmd` with `mode: auto` in config
+- `Stop-AutoUpdate.cmd` in `scripts/`; stops a running auto watcher
+- `Install-AutoUpdate-Task.cmd` in `scripts/`; creates a Windows Scheduled Task that starts watcher on boot
+- `Uninstall-AutoUpdate-Task.cmd` in `scripts/`; removes that task
+
+### How auto-update works
+
+1. Checks the local branch name (must be `main`)
+2. Runs `git fetch origin main --prune`
+3. Computes commits behind with `git rev-list --count HEAD..origin/main`
+4. If behind > 0, runs the blue/green swap updater
+5. Repeats every 120 seconds (default)
+
+### Recommended optional mode (no Scheduled Task)
+
+Set `"mode": "auto"` in `updater.config.json`, then either:
+
+- double-click `Run-Updater.cmd`, or
+- double-click `Start-AutoUpdate.cmd`.
+
+When you are done, run `Stop-AutoUpdate.cmd`.
+
+### Always-on mode (optional Scheduled Task)
+
+Run `Install-AutoUpdate-Task.cmd` as Administrator once.
+
+This creates task `DerbyScoreboardAPIAutoUpdate`, starts it immediately, and runs it automatically at Windows startup.
+
+### Disable always-on scheduled mode
+
+Run `Uninstall-AutoUpdate-Task.cmd`.
+
+### Manual one-shot check
+
+```powershell
+./Auto-Update-API.ps1 -RunOnce
+```
+
+### Optional watcher tuning
+
+```powershell
+./Auto-Update-API.ps1 -CheckIntervalSeconds 60 -Branch main
+```
+
+Auto-updater logs are written to `logs/autoupdater/`.
+
+### Advanced/internal scripts
+
+All implementation scripts live in `scripts/`. Most users should ignore that folder:
+
+- `scripts/Update-API.ps1` and `scripts/Auto-Update-API.ps1`: core blue/green and watcher logic
+- `scripts/Run-Updater.ps1`: config-driven launcher called by `Run-Updater.cmd`
+- `scripts/Stop-AutoUpdate.cmd`: stops a running auto watcher
+- `scripts/Install-AutoUpdate-Task.cmd` / `Uninstall-AutoUpdate-Task.cmd`: optional always-on Windows task
+
 **Options:**
 
 | Flag | Default | Description |

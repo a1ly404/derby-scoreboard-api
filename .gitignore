@@ -29,3 +29,8 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+
+# Updater runtime files
+runtime/
+logs/updater/
+logs/autoupdater/

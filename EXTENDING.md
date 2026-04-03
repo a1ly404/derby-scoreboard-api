@@ -67,6 +67,74 @@ No other code changes needed.
 
 ---
 
+## Timeout fields
+
+When no timeout is active every timeout field is `null`.  When a timeout or
+official review is running the following fields are populated:
+
+| Field | Type | Description |
+|---|---|---|
+| `timeout_type` | `string \| null` | One of `team_timeout`, `official_timeout`, `official_review`, or `timeout`. Resets to `null` when `jam_running` is true. |
+| `timeout_clock_ms` | `int \| null` | Raw millisecond value from CRG `Clock(Timeout)`. |
+| `timeout_clock` | `string \| null` | M:SS formatted string (e.g. `"1:30"`). Null when no timeout active. |
+
+`timeout_type` is derived by the client from the CRG `TimeoutOwner` and
+`OfficialReview` fields.  The normalization table is in `client.py`
+(`TIMEOUT_TYPE_MAP`).
+
+---
+
+## Lead jammer and jam status
+
+These fields are part of `TeamState` and `LiveState` respectively:
+
+| Field | Model | Type | Description |
+|---|---|---|---|
+| `lead` | `TeamState` | `bool \| null` | True when this team's jammer has lead jammer status as reported by CRG. |
+| `display_lead` | `TeamState` | `bool \| null` | CRG's display-facing lead flag — mirrors `lead` except it can persist briefly after calloff for scoreboard display purposes. |
+| `calloff` | `TeamState` | `bool \| null` | True when the jammer called off the jam. |
+| `lost` | `TeamState` | `bool \| null` | True when lead jammer status has been lost (e.g. penalty). |
+| `jam_running` | `LiveState` | `bool \| null` | True while the jam clock is actively counting down. |
+| `in_jam` | `LiveState` | `bool \| null` | True from the moment a jam starts until the jam is officially ended by the NSO. Use this (not `jam_running`) to detect whether a jam is "live". |
+
+Typical overlay logic:
+
+```javascript
+// Show the star when a team has lead
+teamEl.classList.toggle("lead", state.team1.lead === true);
+
+// Detect a jam that has finished its clock but not been stopped yet
+const jamExpired = state.in_jam && !state.jam_running;
+```
+
+---
+
+## Star pass
+
+`star_pass` is a `bool | null` field on `TeamState`.  When `true` the jammer
+and pivot slots are **swapped** by the client before the response is built, so
+consumers always find the active jammer in `jammer` and the active pivot in
+`pivot` regardless of who originally wore the star.
+
+```
+Before star pass:   jammer = original jammer,  pivot = original pivot
+After star pass:    jammer = original pivot,    pivot = original jammer
+```
+
+The `star_pass` flag itself is still exposed so overlays can show a star-pass
+indicator or suppress the pivot label.
+
+**Display example:**
+
+```javascript
+if (team.star_pass) {
+  jammerEl.textContent = `${team.jammer.number} (SP)`;
+  pivotEl.textContent  = team.pivot.number;   // original jammer, now a blocker
+}
+```
+
+---
+
 ## Adding a new endpoint
 
 Add a route inside `create_app()` in `main.py`, following the existing pattern:
