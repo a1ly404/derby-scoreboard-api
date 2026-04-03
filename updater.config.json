@@ -1,0 +1,14 @@
+{
+  "_comment_mode": "mode: manual or auto",
+  "mode": "manual",
+  "_comment_branch": "branch watched in auto mode",
+  "branch": "main",
+  "_comment_checkIntervalSeconds": "how often auto mode checks for changes (seconds)",
+  "checkIntervalSeconds": 120,
+  "_comment_scoreboardHost": "CRG scoreboard host/IP",
+  "scoreboardHost": "localhost",
+  "_comment_scoreboardPort": "CRG scoreboard port",
+  "scoreboardPort": 8000,
+  "_comment_healthUrl": "public API health endpoint used to verify the swap succeeded",
+  "healthUrl": "http://localhost:5001/health"
+}
