@@ -241,6 +241,10 @@ Clean, mapped live game state. Poll this at whatever rate suits your overlay (20
 > `null` means no update has been received yet (proxy just connected). If this grows above a few
 > seconds while `connected` is `true`, the scoreboard may be frozen.
 
+> **`game_state`:** Usually mirrors CRG's raw `State` field, but may be normalized for display use.
+> For example, if `Clock(Intermission).Running` is `true`, `/live` returns `"Intermission"`
+> even if the raw scoreboard `State` still says `"Running"`.
+
 > **`timeout_type`:** Normalized timeout/review state derived from `game_state`.
 > Values: `team_timeout`, `official_timeout`, `official_review`, `timeout`, or `null`.
 > It is forced to `null` when `jam_running` is `true` (play resumed).

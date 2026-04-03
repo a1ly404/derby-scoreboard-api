@@ -79,6 +79,31 @@ async def test_get_live_state_maps_clocks(mock_server):
 
 
 @pytest.mark.asyncio
+async def test_get_live_state_intermission_clock_overrides_game_state(mock_server):
+    client, task = await _connected_client(mock_server)
+    try:
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.State": "Running",
+            "ScoreBoard.CurrentGame.Clock(Intermission).Running": True,
+        })
+        await asyncio.sleep(0.1)
+
+        state = client.get_live_state()
+        assert state.game_state == "Intermission"
+
+        await mock_server.push_update({
+            "ScoreBoard.CurrentGame.Clock(Intermission).Running": False,
+        })
+        await asyncio.sleep(0.1)
+
+        state = client.get_live_state()
+        assert state.game_state == "Running"
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+@pytest.mark.asyncio
 async def test_get_live_state_maps_jammer_info(mock_server):
     client, task = await _connected_client(mock_server)
     try:

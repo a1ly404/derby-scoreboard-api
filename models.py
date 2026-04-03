@@ -64,7 +64,15 @@ class LiveState(BaseModel):
     period_clock: Optional[str] = None
     jam_running: Optional[bool] = None
     in_jam: Optional[bool] = None
-    game_state: Optional[str] = None
+    game_state: Optional[str] = Field(
+        default=None,
+        description=(
+            "Display-oriented game state. Usually mirrors CRG's State field, "
+            "but may be synthesized from clock activity for clearer downstream use. "
+            'For example, when Clock(Intermission).Running is true this is returned as "Intermission" '
+            'even if the raw CRG State still reads "Running".'
+        ),
+    )
     timeout_type: Optional[str] = Field(
         default=None,
         description=(
