@@ -252,6 +252,10 @@ class ScoreboardClient:
             for field, (suffix, typ) in GAME_FIELD_MAP.items()
         }
         clock_timeout_running = self._get("Clock(Timeout).Running", bool)
+        # Check if intermission clock is running — if so, override game_state to show intermission
+        intermission_clock_running = self._get("Clock(Intermission).Running", bool)
+        if intermission_clock_running:
+            game_fields["game_state"] = "Intermission"
         # Pop timeout_clock_ms so we can conditionally suppress it below
         # without it conflicting with the **game_fields unpack.
         raw_timeout_clock_ms = game_fields.pop("timeout_clock_ms", None)
