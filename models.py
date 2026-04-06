@@ -1,5 +1,7 @@
 from __future__ import annotations
+
 from typing import Optional
+
 from pydantic import BaseModel, Field
 
 
@@ -33,6 +35,16 @@ class TeamState(BaseModel):
     calloff: Optional[bool] = None
     lost: Optional[bool] = None
     star_pass: Optional[bool] = None
+    timeouts_remaining: int = Field(
+        default=3, description="Timeouts remaining for this team (0–3)"
+    )
+    official_reviews_remaining: int = Field(
+        default=1, description="Official reviews remaining (0–1)"
+    )
+    retained_official_review: bool = Field(
+        default=False,
+        description="True if team retained their official review after a successful challenge",
+    )
     jammer: SkaterPosition = Field(
         default_factory=SkaterPosition,
         description=(
@@ -89,6 +101,20 @@ class LiveState(BaseModel):
         ),
     )
     timeout_clock: Optional[str] = None
+    timeout_owner: Optional[str] = Field(
+        default=None,
+        description=(
+            "Who owns the current timeout: '1' = team 1, '2' = team 2, "
+            "'O' = official timeout/review. None when not in a timeout."
+        ),
+    )
+    in_lineup: bool = Field(
+        default=False,
+        description=(
+            "True during the lineup phase between a timeout/jam end and the next jam start "
+            "(Lineup clock is running)."
+        ),
+    )
     state_age_seconds: Optional[float] = None
     team1: TeamState = Field(default_factory=TeamState)
     team2: TeamState = Field(default_factory=TeamState)

@@ -8,24 +8,25 @@ import time
 from typing import Any, Dict, Optional
 
 import websockets
-from websockets.exceptions import ConnectionClosed
-
 from models import LiveState, SkaterPosition, TeamState
+from websockets.exceptions import ConnectionClosed
 
 logger = logging.getLogger(__name__)
 
-REGISTER_MSG = json.dumps({
-    "action": "Register",
-    "paths": [
-        "ScoreBoard.CurrentGame",
-        "ScoreBoard.Version(release)",
-    ],
-})
+REGISTER_MSG = json.dumps(
+    {
+        "action": "Register",
+        "paths": [
+            "ScoreBoard.CurrentGame",
+            "ScoreBoard.Version(release)",
+        ],
+    }
+)
 
 PING_MSG = json.dumps({"action": "Ping"})
 
-RECONNECT_DELAY = 2          # seconds
-PING_INTERVAL = 30           # seconds
+RECONNECT_DELAY = 2  # seconds
+PING_INTERVAL = 30  # seconds
 PENALTY_BOX_DURATION_S = 30  # seconds
 
 _PREFIX = "ScoreBoard.CurrentGame."
@@ -47,6 +48,9 @@ TEAM_FIELD_MAP: Dict[str, tuple[str, type]] = {
     "calloff": ("Calloff", bool),
     "lost": ("Lost", bool),
     "star_pass": ("StarPass", bool),
+    "timeouts_remaining": ("Timeouts", int),
+    "official_reviews_remaining": ("OfficialReviews", int),
+    "retained_official_review": ("RetainedOfficialReview", bool),
 }
 
 # On-track positions.  Name maps to the CRG Position() key; dict key maps to TeamState field.
@@ -68,6 +72,7 @@ GAME_FIELD_MAP: Dict[str, tuple[str, type]] = {
     "in_jam": ("InJam", bool),
     "game_state": ("State", str),
     "timeout_clock_ms": ("Clock(Timeout).Time", int),
+    "in_lineup": ("Clock(Lineup).Running", bool),
 }
 
 
@@ -122,9 +127,15 @@ class ScoreboardClient:
         self._connected = False
         self._last_update: Optional[float] = None
         self._task: Optional[asyncio.Task] = None
-        self._box_entry_times: Dict[str, int] = {}   # key: "<team_n>.<crg_pos>" -> epoch ms
-        self._box_entry_mono: Dict[str, float] = {}   # key: "<team_n>.<crg_pos>" -> monotonic s
-        self._was_in_box: Dict[str, bool] = {}        # key: "<team_n>.<crg_pos>" -> last known in_box
+        self._box_entry_times: Dict[
+            str, int
+        ] = {}  # key: "<team_n>.<crg_pos>" -> epoch ms
+        self._box_entry_mono: Dict[
+            str, float
+        ] = {}  # key: "<team_n>.<crg_pos>" -> monotonic s
+        self._was_in_box: Dict[
+            str, bool
+        ] = {}  # key: "<team_n>.<crg_pos>" -> last known in_box
 
     @property
     def connected(self) -> bool:
@@ -151,7 +162,9 @@ class ScoreboardClient:
     def _apply_update(self, state_patch: Dict[str, Any]) -> None:
         """Merge a state patch into local state. None values delete keys."""
         if not isinstance(state_patch, dict):
-            raise TypeError(f"Expected dict state patch, got {type(state_patch).__name__}")
+            raise TypeError(
+                f"Expected dict state patch, got {type(state_patch).__name__}"
+            )
         for key, value in state_patch.items():
             if value is None:
                 self._state.pop(key, None)
@@ -195,8 +208,9 @@ class ScoreboardClient:
         """Build a TeamState for team n using TEAM_FIELD_MAP and POSITION_MAP."""
         prefix = f"Team({n})."
         flat_fields = {
-            field: self._get(prefix + suffix, typ)
+            field: val
             for field, (suffix, typ) in TEAM_FIELD_MAP.items()
+            if (val := self._get(prefix + suffix, typ)) is not None
         }
         positions = {}
         for field, crg_pos in POSITION_MAP.items():
@@ -204,13 +218,16 @@ class ScoreboardClient:
             entered_mono = self._box_entry_mono.get(f"{n}.{crg_pos}")
             if entered_mono is not None:
                 elapsed_s = time.monotonic() - entered_mono
-                remaining: Optional[int] = max(0, math.ceil(PENALTY_BOX_DURATION_S - elapsed_s))
+                remaining: Optional[int] = max(
+                    0, math.ceil(PENALTY_BOX_DURATION_S - elapsed_s)
+                )
             else:
                 remaining = None
             positions[field] = SkaterPosition(
                 name=self._get(f"{prefix}Position({crg_pos}).Name"),
                 number=self._get(f"{prefix}Position({crg_pos}).RosterNumber"),
-                in_box=self._get(f"{prefix}Position({crg_pos}).PenaltyBox", bool) or False,
+                in_box=self._get(f"{prefix}Position({crg_pos}).PenaltyBox", bool)
+                or False,
                 box_entered_at_ms=entered_ms,
                 box_time_remaining_s=remaining,
             )
@@ -218,7 +235,10 @@ class ScoreboardClient:
         # becomes the new jammer.  Swap the two positions so downstream consumers
         # always read the current jammer from the `jammer` field.
         if flat_fields.get("star_pass"):
-            positions["jammer"], positions["pivot"] = positions["pivot"], positions["jammer"]
+            positions["jammer"], positions["pivot"] = (
+                positions["pivot"],
+                positions["jammer"],
+            )
         return TeamState(**flat_fields, **positions)
 
     @staticmethod
@@ -273,6 +293,12 @@ class ScoreboardClient:
             clock_timeout_running=clock_timeout_running,
         )
         timeout_clock_ms = raw_timeout_clock_ms if timeout_type else None
+        # Normalize timeout_owner: empty string → None
+        raw_owner = self._state.get("ScoreBoard.CurrentGame.TimeoutOwner", "")
+        timeout_owner = raw_owner if raw_owner else None
+        # Default in_lineup to False when the Lineup clock key is absent from state
+        if game_fields.get("in_lineup") is None:
+            game_fields["in_lineup"] = False
         return LiveState(
             **game_fields,
             jam_clock=_ms_to_clock(game_fields.get("jam_clock_ms")),
@@ -282,6 +308,7 @@ class ScoreboardClient:
             # the last timeout time even between jams.
             timeout_clock_ms=timeout_clock_ms,
             timeout_clock=_ms_to_clock(timeout_clock_ms),
+            timeout_owner=timeout_owner,
             team1=self._team(1),
             team2=self._team(2),
         )
@@ -315,7 +342,9 @@ class ScoreboardClient:
                         elif "error" in msg:
                             logger.warning("Scoreboard error: %s", msg["error"])
                     except Exception:
-                        logger.exception("Error processing scoreboard message, skipping: %r", msg)
+                        logger.exception(
+                            "Error processing scoreboard message, skipping: %r", msg
+                        )
             except ConnectionClosed:
                 pass
             finally:
@@ -350,9 +379,15 @@ class ScoreboardClient:
                 # Proxy is shutting down — let the cancellation propagate.
                 raise
             except OSError as exc:
-                logger.warning("Scoreboard unreachable (%s) — retrying in %ds", exc, RECONNECT_DELAY)
+                logger.warning(
+                    "Scoreboard unreachable (%s) — retrying in %ds",
+                    exc,
+                    RECONNECT_DELAY,
+                )
             except Exception:
-                logger.exception("Unexpected WS client error — retrying in %ds", RECONNECT_DELAY)
+                logger.exception(
+                    "Unexpected WS client error — retrying in %ds", RECONNECT_DELAY
+                )
             finally:
                 self._connected = False
             await asyncio.sleep(RECONNECT_DELAY)

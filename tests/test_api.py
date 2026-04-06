@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import sys
 
 import pytest
 import pytest_asyncio
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 
-import sys
-import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from main import create_app
+
 from tests.conftest import MockScoreboardServer, _free_port
 
 pytestmark = pytest.mark.asyncio
@@ -95,9 +96,11 @@ async def test_live_includes_timeout_type_field(app_client):
 
 
 async def test_live_reflects_score_update(app_client, mock_server):
-    await mock_server.push_update({
-        "ScoreBoard.CurrentGame.Team(2).Score": 50,
-    })
+    await mock_server.push_update(
+        {
+            "ScoreBoard.CurrentGame.Team(2).Score": 50,
+        }
+    )
     await asyncio.sleep(0.15)
     resp = await app_client.get("/live")
     data = resp.json()
@@ -105,11 +108,13 @@ async def test_live_reflects_score_update(app_client, mock_server):
 
 
 async def test_live_reflects_jam_start(app_client, mock_server):
-    await mock_server.push_update({
-        "ScoreBoard.CurrentGame.InJam": True,
-        "ScoreBoard.CurrentGame.Clock(Jam).Running": True,
-        "ScoreBoard.CurrentGame.Clock(Jam).Time": 120000,
-    })
+    await mock_server.push_update(
+        {
+            "ScoreBoard.CurrentGame.InJam": True,
+            "ScoreBoard.CurrentGame.Clock(Jam).Running": True,
+            "ScoreBoard.CurrentGame.Clock(Jam).Time": 120000,
+        }
+    )
     await asyncio.sleep(0.15)
     resp = await app_client.get("/live")
     data = resp.json()
@@ -140,6 +145,7 @@ async def test_openapi_json_available(app_client):
 # ---------------------------------------------------------------------------
 # Offline / disconnected fixture and tests
 # ---------------------------------------------------------------------------
+
 
 @pytest_asyncio.fixture
 async def app_client_offline():
@@ -232,14 +238,13 @@ async def test_raw_503_has_retry_after_header(app_client_offline):
 # Concurrency / load sanity — simulates multiple overlays polling simultaneously
 # ---------------------------------------------------------------------------
 
+
 async def test_concurrent_live_requests(app_client):
     """
     Fire 25 simultaneous /live requests (5 overlays × 200ms poll = ~25 req/s).
     All must return 200 with consistent scores.
     """
-    responses = await asyncio.gather(
-        *[app_client.get("/live") for _ in range(25)]
-    )
+    responses = await asyncio.gather(*[app_client.get("/live") for _ in range(25)])
     for resp in responses:
         assert resp.status_code == 200
         data = resp.json()
@@ -260,11 +265,47 @@ async def test_live_all_positions_present(app_client):
 
 
 async def test_live_penalty_box_update(app_client, mock_server):
-    await mock_server.push_update({
-        "ScoreBoard.CurrentGame.Team(2).Position(Jammer).PenaltyBox": True,
-    })
+    await mock_server.push_update(
+        {
+            "ScoreBoard.CurrentGame.Team(2).Position(Jammer).PenaltyBox": True,
+        }
+    )
     await asyncio.sleep(0.15)
     resp = await app_client.get("/live")
     data = resp.json()
     assert data["team2"]["jammer"]["in_box"] is True
     assert data["team1"]["jammer"]["in_box"] is False
+
+
+async def test_live_includes_timeout_owner_null_by_default(app_client):
+    """timeout_owner is None when not in a timeout."""
+    resp = await app_client.get("/live")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["timeout_owner"] is None
+
+
+async def test_live_includes_in_lineup_false_by_default(app_client):
+    """in_lineup is False when Lineup clock is not running."""
+    resp = await app_client.get("/live")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["in_lineup"] is False
+
+
+async def test_live_timeouts_remaining_present(app_client):
+    """timeouts_remaining is in the team response."""
+    resp = await app_client.get("/live")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["team1"]["timeouts_remaining"] == 3
+    assert data["team2"]["timeouts_remaining"] == 3
+
+
+async def test_live_official_reviews_remaining_present(app_client):
+    """official_reviews_remaining is in the team response."""
+    resp = await app_client.get("/live")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["team1"]["official_reviews_remaining"] == 1
+    assert data["team2"]["official_reviews_remaining"] == 1

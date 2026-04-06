@@ -9,7 +9,6 @@ import pytest
 import pytest_asyncio
 import websockets
 
-
 INITIAL_STATE: Dict[str, Any] = {
     "ScoreBoard.Version(release)": "v5.0.0-test",
     "ScoreBoard.CurrentGame.State": "Running",
@@ -23,6 +22,8 @@ INITIAL_STATE: Dict[str, Any] = {
     "ScoreBoard.CurrentGame.Clock(Period).Number": 1,
     "ScoreBoard.CurrentGame.Clock(Timeout).Running": False,
     "ScoreBoard.CurrentGame.Clock(Timeout).Time": 0,
+    "ScoreBoard.CurrentGame.Clock(Lineup).Running": False,
+    "ScoreBoard.CurrentGame.TimeoutOwner": "",
     "ScoreBoard.CurrentGame.Team(1).Name": "Home Team",
     "ScoreBoard.CurrentGame.Team(1).FullName": "The Home Team",
     "ScoreBoard.CurrentGame.Team(1).Score": 42,
@@ -32,6 +33,9 @@ INITIAL_STATE: Dict[str, Any] = {
     "ScoreBoard.CurrentGame.Team(1).Calloff": False,
     "ScoreBoard.CurrentGame.Team(1).Lost": False,
     "ScoreBoard.CurrentGame.Team(1).StarPass": False,
+    "ScoreBoard.CurrentGame.Team(1).Timeouts": 3,
+    "ScoreBoard.CurrentGame.Team(1).OfficialReviews": 1,
+    "ScoreBoard.CurrentGame.Team(1).RetainedOfficialReview": False,
     "ScoreBoard.CurrentGame.Team(1).Position(Jammer).Name": "Speed Demon",
     "ScoreBoard.CurrentGame.Team(1).Position(Jammer).RosterNumber": "88",
     "ScoreBoard.CurrentGame.Team(1).Position(Jammer).PenaltyBox": False,
@@ -56,6 +60,9 @@ INITIAL_STATE: Dict[str, Any] = {
     "ScoreBoard.CurrentGame.Team(2).Calloff": False,
     "ScoreBoard.CurrentGame.Team(2).Lost": False,
     "ScoreBoard.CurrentGame.Team(2).StarPass": False,
+    "ScoreBoard.CurrentGame.Team(2).Timeouts": 3,
+    "ScoreBoard.CurrentGame.Team(2).OfficialReviews": 1,
+    "ScoreBoard.CurrentGame.Team(2).RetainedOfficialReview": False,
     "ScoreBoard.CurrentGame.Team(2).Position(Jammer).Name": "Lightning Bolt",
     "ScoreBoard.CurrentGame.Team(2).Position(Jammer).RosterNumber": "7",
     "ScoreBoard.CurrentGame.Team(2).Position(Jammer).PenaltyBox": False,

@@ -2,21 +2,24 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import sys
 import time
 from unittest.mock import patch
 
 import pytest
 import pytest_asyncio
 
-import sys
-import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from client import ScoreboardClient, _coerce
-from tests.conftest import MockScoreboardServer, INITIAL_STATE
+
+from tests.conftest import INITIAL_STATE, MockScoreboardServer
 
 
-async def _connected_client(server: MockScoreboardServer) -> ScoreboardClient:
+async def _connected_client(
+    server: MockScoreboardServer,
+) -> tuple[ScoreboardClient, asyncio.Task]:
     """Start a client, wait for it to receive the initial snapshot."""
     client = ScoreboardClient(host="127.0.0.1", port=server.port)
     task = client.start()
@@ -82,18 +85,22 @@ async def test_get_live_state_maps_clocks(mock_server):
 async def test_get_live_state_intermission_clock_overrides_game_state(mock_server):
     client, task = await _connected_client(mock_server)
     try:
-        await mock_server.push_update({
-            "ScoreBoard.CurrentGame.State": "Running",
-            "ScoreBoard.CurrentGame.Clock(Intermission).Running": True,
-        })
+        await mock_server.push_update(
+            {
+                "ScoreBoard.CurrentGame.State": "Running",
+                "ScoreBoard.CurrentGame.Clock(Intermission).Running": True,
+            }
+        )
         await asyncio.sleep(0.1)
 
         state = client.get_live_state()
         assert state.game_state == "Intermission"
 
-        await mock_server.push_update({
-            "ScoreBoard.CurrentGame.Clock(Intermission).Running": False,
-        })
+        await mock_server.push_update(
+            {
+                "ScoreBoard.CurrentGame.Clock(Intermission).Running": False,
+            }
+        )
         await asyncio.sleep(0.1)
 
         state = client.get_live_state()
@@ -144,16 +151,25 @@ async def test_penalty_box_defaults_false_when_key_absent(mock_server):
     client, task = await _connected_client(mock_server)
     try:
         # Delete all PenaltyBox keys so the client has no value for them
-        await mock_server.push_update({
-            f"ScoreBoard.CurrentGame.Team({t}).Position({p}).PenaltyBox": None
-            for t in (1, 2)
-            for p in ("Jammer", "Pivot", "Blocker1", "Blocker2", "Blocker3")
-        })
+        await mock_server.push_update(
+            {
+                f"ScoreBoard.CurrentGame.Team({t}).Position({p}).PenaltyBox": None
+                for t in (1, 2)
+                for p in ("Jammer", "Pivot", "Blocker1", "Blocker2", "Blocker3")
+            }
+        )
         await asyncio.sleep(0.1)
         state = client.get_live_state()
-        for pos in (state.team1.jammer, state.team1.pivot,
-                    state.team1.blocker1, state.team1.blocker2, state.team1.blocker3):
-            assert pos.in_box is False, f"Expected False when key absent, got {pos.in_box}"
+        for pos in (
+            state.team1.jammer,
+            state.team1.pivot,
+            state.team1.blocker1,
+            state.team1.blocker2,
+            state.team1.blocker3,
+        ):
+            assert pos.in_box is False, (
+                f"Expected False when key absent, got {pos.in_box}"
+            )
     finally:
         client.stop()
         await asyncio.sleep(0.05)
@@ -163,9 +179,11 @@ async def test_penalty_box_defaults_false_when_key_absent(mock_server):
 async def test_penalty_box_update(mock_server):
     client, task = await _connected_client(mock_server)
     try:
-        await mock_server.push_update({
-            "ScoreBoard.CurrentGame.Team(1).Position(Blocker2).PenaltyBox": True,
-        })
+        await mock_server.push_update(
+            {
+                "ScoreBoard.CurrentGame.Team(1).Position(Blocker2).PenaltyBox": True,
+            }
+        )
         await asyncio.sleep(0.1)
         state = client.get_live_state()
         assert state.team1.blocker2.in_box is True
@@ -193,9 +211,11 @@ async def test_box_entered_at_ms_set_on_entry(mock_server):
     client, task = await _connected_client(mock_server)
     try:
         before_ms = int(time.time() * 1000)
-        await mock_server.push_update({
-            "ScoreBoard.CurrentGame.Team(1).Position(Blocker1).PenaltyBox": True,
-        })
+        await mock_server.push_update(
+            {
+                "ScoreBoard.CurrentGame.Team(1).Position(Blocker1).PenaltyBox": True,
+            }
+        )
         await asyncio.sleep(0.1)
         after_ms = int(time.time() * 1000)
 
@@ -214,15 +234,19 @@ async def test_box_entered_at_ms_cleared_on_exit(mock_server):
     """box_entered_at_ms returns to None when in_box transitions to False."""
     client, task = await _connected_client(mock_server)
     try:
-        await mock_server.push_update({
-            "ScoreBoard.CurrentGame.Team(1).Position(Blocker1).PenaltyBox": True,
-        })
+        await mock_server.push_update(
+            {
+                "ScoreBoard.CurrentGame.Team(1).Position(Blocker1).PenaltyBox": True,
+            }
+        )
         await asyncio.sleep(0.1)
         assert client.get_live_state().team1.blocker1.box_entered_at_ms is not None
 
-        await mock_server.push_update({
-            "ScoreBoard.CurrentGame.Team(1).Position(Blocker1).PenaltyBox": False,
-        })
+        await mock_server.push_update(
+            {
+                "ScoreBoard.CurrentGame.Team(1).Position(Blocker1).PenaltyBox": False,
+            }
+        )
         await asyncio.sleep(0.1)
         state = client.get_live_state()
         assert state.team1.blocker1.in_box is False
@@ -249,9 +273,11 @@ async def test_box_time_remaining_s_counts_down(mock_server):
     """box_time_remaining_s reflects correct remaining seconds after box entry."""
     client, task = await _connected_client(mock_server)
     try:
-        await mock_server.push_update({
-            "ScoreBoard.CurrentGame.Team(1).Position(Jammer).PenaltyBox": True,
-        })
+        await mock_server.push_update(
+            {
+                "ScoreBoard.CurrentGame.Team(1).Position(Jammer).PenaltyBox": True,
+            }
+        )
         await asyncio.sleep(0.1)
         state = client.get_live_state()
         remaining = state.team1.jammer.box_time_remaining_s
@@ -267,6 +293,7 @@ async def test_box_time_remaining_s_counts_down(mock_server):
 async def test_box_time_remaining_s_zero_when_expired(mock_server):
     """box_time_remaining_s is 0 when the 30-second window has already passed."""
     from client import PENALTY_BOX_DURATION_S
+
     client, task = await _connected_client(mock_server)
     try:
         past_time = time.time() - (PENALTY_BOX_DURATION_S + 5)
@@ -274,9 +301,11 @@ async def test_box_time_remaining_s_zero_when_expired(mock_server):
         with patch("client.time") as mock_time:
             mock_time.time.return_value = past_time
             mock_time.monotonic.return_value = past_mono
-            await mock_server.push_update({
-                "ScoreBoard.CurrentGame.Team(2).Position(Pivot).PenaltyBox": True,
-            })
+            await mock_server.push_update(
+                {
+                    "ScoreBoard.CurrentGame.Team(2).Position(Pivot).PenaltyBox": True,
+                }
+            )
             await asyncio.sleep(0.1)
         state = client.get_live_state()
         assert state.team2.pivot.box_time_remaining_s == 0
@@ -290,16 +319,20 @@ async def test_box_entered_at_ms_not_reset_on_repeated_true(mock_server):
     """box_entered_at_ms is not updated if in_box is already True (no re-entry)."""
     client, task = await _connected_client(mock_server)
     try:
-        await mock_server.push_update({
-            "ScoreBoard.CurrentGame.Team(1).Position(Blocker1).PenaltyBox": True,
-        })
+        await mock_server.push_update(
+            {
+                "ScoreBoard.CurrentGame.Team(1).Position(Blocker1).PenaltyBox": True,
+            }
+        )
         await asyncio.sleep(0.1)
         first_ts = client.get_live_state().team1.blocker1.box_entered_at_ms
 
         # Another PenaltyBox=True (e.g. scoreboard resending state)
-        await mock_server.push_update({
-            "ScoreBoard.CurrentGame.Team(1).Position(Blocker1).PenaltyBox": True,
-        })
+        await mock_server.push_update(
+            {
+                "ScoreBoard.CurrentGame.Team(1).Position(Blocker1).PenaltyBox": True,
+            }
+        )
         await asyncio.sleep(0.1)
         second_ts = client.get_live_state().team1.blocker1.box_entered_at_ms
 
@@ -313,10 +346,12 @@ async def test_box_entered_at_ms_not_reset_on_repeated_true(mock_server):
 async def test_state_update_reflects_new_score(mock_server):
     client, task = await _connected_client(mock_server)
     try:
-        await mock_server.push_update({
-            "ScoreBoard.CurrentGame.Team(1).Score": 47,
-            "ScoreBoard.CurrentGame.Team(1).JamScore": 5,
-        })
+        await mock_server.push_update(
+            {
+                "ScoreBoard.CurrentGame.Team(1).Score": 47,
+                "ScoreBoard.CurrentGame.Team(1).JamScore": 5,
+            }
+        )
         await asyncio.sleep(0.1)
         state = client.get_live_state()
         assert state.team1.score == 47
@@ -331,9 +366,11 @@ async def test_null_value_deletes_key(mock_server):
     client, task = await _connected_client(mock_server)
     try:
         # Null out the jammer name (happens when jam ends in real scoreboard)
-        await mock_server.push_update({
-            "ScoreBoard.CurrentGame.Team(1).Position(Jammer).Name": None,
-        })
+        await mock_server.push_update(
+            {
+                "ScoreBoard.CurrentGame.Team(1).Position(Jammer).Name": None,
+            }
+        )
         await asyncio.sleep(0.1)
         state = client.get_live_state()
         assert state.team1.jammer.name is None
@@ -346,10 +383,12 @@ async def test_null_value_deletes_key(mock_server):
 async def test_lead_and_display_lead(mock_server):
     client, task = await _connected_client(mock_server)
     try:
-        await mock_server.push_update({
-            "ScoreBoard.CurrentGame.Team(1).Lead": True,
-            "ScoreBoard.CurrentGame.Team(1).DisplayLead": True,
-        })
+        await mock_server.push_update(
+            {
+                "ScoreBoard.CurrentGame.Team(1).Lead": True,
+                "ScoreBoard.CurrentGame.Team(1).DisplayLead": True,
+            }
+        )
         await asyncio.sleep(0.1)
         state = client.get_live_state()
         assert state.team1.lead is True
@@ -372,10 +411,12 @@ async def test_lead_and_display_lead(mock_server):
 async def test_timeout_type_from_game_state(mock_server, game_state, expected):
     client, task = await _connected_client(mock_server)
     try:
-        await mock_server.push_update({
-            "ScoreBoard.CurrentGame.Clock(Jam).Running": False,
-            "ScoreBoard.CurrentGame.State": game_state,
-        })
+        await mock_server.push_update(
+            {
+                "ScoreBoard.CurrentGame.Clock(Jam).Running": False,
+                "ScoreBoard.CurrentGame.State": game_state,
+            }
+        )
         await asyncio.sleep(0.1)
         state = client.get_live_state()
         assert state.timeout_type == expected
@@ -388,16 +429,20 @@ async def test_timeout_type_from_game_state(mock_server, game_state, expected):
 async def test_timeout_type_clears_when_jam_running(mock_server):
     client, task = await _connected_client(mock_server)
     try:
-        await mock_server.push_update({
-            "ScoreBoard.CurrentGame.Clock(Jam).Running": False,
-            "ScoreBoard.CurrentGame.State": "Official Timeout",
-        })
+        await mock_server.push_update(
+            {
+                "ScoreBoard.CurrentGame.Clock(Jam).Running": False,
+                "ScoreBoard.CurrentGame.State": "Official Timeout",
+            }
+        )
         await asyncio.sleep(0.1)
         assert client.get_live_state().timeout_type == "official_timeout"
 
-        await mock_server.push_update({
-            "ScoreBoard.CurrentGame.Clock(Jam).Running": True,
-        })
+        await mock_server.push_update(
+            {
+                "ScoreBoard.CurrentGame.Clock(Jam).Running": True,
+            }
+        )
         await asyncio.sleep(0.1)
         assert client.get_live_state().timeout_type is None
     finally:
@@ -443,6 +488,7 @@ async def test_reconnects_after_server_restart(mock_server):
 # ---------------------------------------------------------------------------
 # Bug-regression tests added during QA
 # ---------------------------------------------------------------------------
+
 
 # Bug: bool("false") == True in Python — coercion of CRG string booleans
 def test_coerce_string_false_returns_false():
@@ -518,18 +564,19 @@ async def test_seconds_since_update_is_populated_after_connect(mock_server):
 # Additional coverage tests
 # ---------------------------------------------------------------------------
 
+
 def test_coerce_invalid_type_returns_original_value():
     """Test _coerce with invalid type conversion that raises ValueError or TypeError."""
     # Try to convert "invalid" to int - should return original value
     assert _coerce("invalid", int) == "invalid"
-    
+
     # Try to convert None to a complex type that would raise TypeError
     class TestClass:
         def __init__(self, value):
             if value is None:
                 raise TypeError("Cannot create TestClass from None")
             self.value = value
-    
+
     assert _coerce(None, TestClass) is None
 
 
@@ -541,7 +588,9 @@ def test_normalize_timeout_type_additional_cases():
     assert ScoreboardClient._normalize_timeout_type("Timeout", False) == "timeout"
 
     # Test "review" case
-    assert ScoreboardClient._normalize_timeout_type("Review", False) == "official_review"
+    assert (
+        ScoreboardClient._normalize_timeout_type("Review", False) == "official_review"
+    )
 
     # Test unrecognized state
     assert ScoreboardClient._normalize_timeout_type("Running", False) is None
@@ -550,13 +599,23 @@ def test_normalize_timeout_type_additional_cases():
     assert ScoreboardClient._normalize_timeout_type("", False) is None
 
     # clock_timeout_running=True fires even when State hasn't updated
-    assert ScoreboardClient._normalize_timeout_type("Running", False, clock_timeout_running=True) == "timeout"
+    assert (
+        ScoreboardClient._normalize_timeout_type(
+            "Running", False, clock_timeout_running=True
+        )
+        == "timeout"
+    )
 
     # clock_timeout_running=True does not override jam_running guard
-    assert ScoreboardClient._normalize_timeout_type("Timeout", True, clock_timeout_running=True) is None
+    assert (
+        ScoreboardClient._normalize_timeout_type(
+            "Timeout", True, clock_timeout_running=True
+        )
+        is None
+    )
 
 
-@pytest.mark.asyncio  
+@pytest.mark.asyncio
 async def test_client_handles_json_decode_error(mock_server):
     """Test that client handles non-JSON messages gracefully."""
     client, task = await _connected_client(mock_server)
@@ -564,7 +623,7 @@ async def test_client_handles_json_decode_error(mock_server):
         # Send an invalid JSON message through the mock server
         await mock_server.push_raw("invalid json {")
         await asyncio.sleep(0.1)
-        
+
         # Client should still be connected and functioning
         assert client.connected is True
         state = client.get_live_state()
@@ -576,13 +635,13 @@ async def test_client_handles_json_decode_error(mock_server):
 
 @pytest.mark.asyncio
 async def test_client_handles_message_processing_error(mock_server):
-    """Test that client handles errors in message processing gracefully.""" 
+    """Test that client handles errors in message processing gracefully."""
     client, task = await _connected_client(mock_server)
     try:
         # Send a message with state that would cause processing issues
         await mock_server.push_update({"invalid": "structure that might cause errors"})
         await asyncio.sleep(0.1)
-        
+
         # Client should still be connected
         assert client.connected is True
     finally:
@@ -592,14 +651,15 @@ async def test_client_handles_message_processing_error(mock_server):
 
 @pytest.mark.asyncio
 async def test_client_handles_error_message_from_scoreboard(mock_server):
-    """Test client handles error messages from scoreboard.""" 
+    """Test client handles error messages from scoreboard."""
     import json
+
     client, task = await _connected_client(mock_server)
     try:
         # Send an error message as the scoreboard might
         await mock_server.push_raw(json.dumps({"error": "Test error from scoreboard"}))
         await asyncio.sleep(0.1)
-        
+
         # Client should still be connected despite error
         assert client.connected is True
     finally:
@@ -610,6 +670,7 @@ async def test_client_handles_error_message_from_scoreboard(mock_server):
 # ---------------------------------------------------------------------------
 # Star-pass tests
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_star_pass_false_does_not_swap_jammer_and_pivot(mock_server):
@@ -630,9 +691,11 @@ async def test_star_pass_true_swaps_jammer_and_pivot(mock_server):
     """When star_pass is True the pivot becomes the jammer and vice-versa."""
     client, task = await _connected_client(mock_server)
     try:
-        await mock_server.push_update({
-            "ScoreBoard.CurrentGame.Team(1).StarPass": True,
-        })
+        await mock_server.push_update(
+            {
+                "ScoreBoard.CurrentGame.Team(1).StarPass": True,
+            }
+        )
         await asyncio.sleep(0.1)
         state = client.get_live_state()
         assert state.team1.star_pass is True
@@ -652,9 +715,11 @@ async def test_star_pass_swap_does_not_affect_other_team(mock_server):
     """A star pass for one team must not affect the other team's positions."""
     client, task = await _connected_client(mock_server)
     try:
-        await mock_server.push_update({
-            "ScoreBoard.CurrentGame.Team(1).StarPass": True,
-        })
+        await mock_server.push_update(
+            {
+                "ScoreBoard.CurrentGame.Team(1).StarPass": True,
+            }
+        )
         await asyncio.sleep(0.1)
         state = client.get_live_state()
         # Team 2 is unaffected
@@ -671,16 +736,20 @@ async def test_star_pass_cleared_restores_original_positions(mock_server):
     """When star_pass goes back to False the positions revert to original order."""
     client, task = await _connected_client(mock_server)
     try:
-        await mock_server.push_update({
-            "ScoreBoard.CurrentGame.Team(2).StarPass": True,
-        })
+        await mock_server.push_update(
+            {
+                "ScoreBoard.CurrentGame.Team(2).StarPass": True,
+            }
+        )
         await asyncio.sleep(0.1)
         # Confirm swap happened for team 2
         assert client.get_live_state().team2.jammer.name == "Storm Front"
 
-        await mock_server.push_update({
-            "ScoreBoard.CurrentGame.Team(2).StarPass": False,
-        })
+        await mock_server.push_update(
+            {
+                "ScoreBoard.CurrentGame.Team(2).StarPass": False,
+            }
+        )
         await asyncio.sleep(0.1)
         state = client.get_live_state()
         assert state.team2.star_pass is False
@@ -697,10 +766,12 @@ async def test_star_pass_box_tracking_follows_swapped_skater(mock_server):
     client, task = await _connected_client(mock_server)
     try:
         # Put the original jammer (Speed Demon) in the box, then trigger a star pass
-        await mock_server.push_update({
-            "ScoreBoard.CurrentGame.Team(1).Position(Jammer).PenaltyBox": True,
-            "ScoreBoard.CurrentGame.Team(1).StarPass": True,
-        })
+        await mock_server.push_update(
+            {
+                "ScoreBoard.CurrentGame.Team(1).Position(Jammer).PenaltyBox": True,
+                "ScoreBoard.CurrentGame.Team(1).StarPass": True,
+            }
+        )
         await asyncio.sleep(0.1)
         state = client.get_live_state()
         # After the star pass the original jammer is now in the pivot slot
@@ -718,17 +789,20 @@ async def test_star_pass_box_tracking_follows_swapped_skater(mock_server):
 # Timeout clock tests
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_timeout_type_from_clock_running_when_state_unchanged(mock_server):
     """Clock(Timeout).Running=True triggers timeout_type even if State hasn't updated."""
     client, task = await _connected_client(mock_server)
     try:
-        await mock_server.push_update({
-            "ScoreBoard.CurrentGame.Clock(Jam).Running": False,
-            "ScoreBoard.CurrentGame.Clock(Timeout).Running": True,
-            "ScoreBoard.CurrentGame.Clock(Timeout).Time": 15000,
-            # State deliberately left as "Running" to simulate CRG lag
-        })
+        await mock_server.push_update(
+            {
+                "ScoreBoard.CurrentGame.Clock(Jam).Running": False,
+                "ScoreBoard.CurrentGame.Clock(Timeout).Running": True,
+                "ScoreBoard.CurrentGame.Clock(Timeout).Time": 15000,
+                # State deliberately left as "Running" to simulate CRG lag
+            }
+        )
         await asyncio.sleep(0.1)
         state = client.get_live_state()
         assert state.timeout_type == "timeout"
@@ -742,12 +816,14 @@ async def test_timeout_clock_ms_populated_when_timeout_active(mock_server):
     """timeout_clock_ms reflects Clock(Timeout).Time when a timeout is active."""
     client, task = await _connected_client(mock_server)
     try:
-        await mock_server.push_update({
-            "ScoreBoard.CurrentGame.Clock(Jam).Running": False,
-            "ScoreBoard.CurrentGame.Clock(Timeout).Running": True,
-            "ScoreBoard.CurrentGame.Clock(Timeout).Time": 23000,
-            "ScoreBoard.CurrentGame.State": "Timeout",
-        })
+        await mock_server.push_update(
+            {
+                "ScoreBoard.CurrentGame.Clock(Jam).Running": False,
+                "ScoreBoard.CurrentGame.Clock(Timeout).Running": True,
+                "ScoreBoard.CurrentGame.Clock(Timeout).Time": 23000,
+                "ScoreBoard.CurrentGame.State": "Timeout",
+            }
+        )
         await asyncio.sleep(0.1)
         state = client.get_live_state()
         assert state.timeout_type == "timeout"
@@ -775,23 +851,174 @@ async def test_timeout_clock_ms_cleared_when_jam_starts(mock_server):
     """timeout_clock_ms goes back to None when a jam starts after a timeout."""
     client, task = await _connected_client(mock_server)
     try:
-        await mock_server.push_update({
-            "ScoreBoard.CurrentGame.Clock(Jam).Running": False,
-            "ScoreBoard.CurrentGame.Clock(Timeout).Running": True,
-            "ScoreBoard.CurrentGame.Clock(Timeout).Time": 30000,
-            "ScoreBoard.CurrentGame.State": "Timeout",
-        })
+        await mock_server.push_update(
+            {
+                "ScoreBoard.CurrentGame.Clock(Jam).Running": False,
+                "ScoreBoard.CurrentGame.Clock(Timeout).Running": True,
+                "ScoreBoard.CurrentGame.Clock(Timeout).Time": 30000,
+                "ScoreBoard.CurrentGame.State": "Timeout",
+            }
+        )
         await asyncio.sleep(0.1)
         assert client.get_live_state().timeout_clock_ms == 30000
 
-        await mock_server.push_update({
-            "ScoreBoard.CurrentGame.Clock(Jam).Running": True,
-            "ScoreBoard.CurrentGame.Clock(Timeout).Running": False,
-        })
+        await mock_server.push_update(
+            {
+                "ScoreBoard.CurrentGame.Clock(Jam).Running": True,
+                "ScoreBoard.CurrentGame.Clock(Timeout).Running": False,
+            }
+        )
         await asyncio.sleep(0.1)
         state = client.get_live_state()
         assert state.timeout_type is None
         assert state.timeout_clock_ms is None
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+# ── New fields: timeout ownership, counters, in_lineup ─────────────────────────
+
+
+async def test_timeouts_remaining_default(mock_server):
+    """Team timeouts_remaining comes from the Timeouts field (default 3)."""
+    client, task = await _connected_client(mock_server)
+    try:
+        state = client.get_live_state()
+        assert state.team1.timeouts_remaining == 3
+        assert state.team2.timeouts_remaining == 3
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+async def test_timeouts_remaining_update(mock_server):
+    """Push a Timeouts update and verify it reflects in the live state."""
+    client, task = await _connected_client(mock_server)
+    try:
+        await mock_server.push_update({"ScoreBoard.CurrentGame.Team(1).Timeouts": 1})
+        await asyncio.sleep(0.05)
+        state = client.get_live_state()
+        assert state.team1.timeouts_remaining == 1
+        assert state.team2.timeouts_remaining == 3  # unchanged
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+async def test_official_reviews_remaining_default(mock_server):
+    """Official reviews default to 1."""
+    client, task = await _connected_client(mock_server)
+    try:
+        state = client.get_live_state()
+        assert state.team1.official_reviews_remaining == 1
+        assert state.team2.official_reviews_remaining == 1
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+async def test_official_reviews_remaining_used(mock_server):
+    """Official review used (0 remaining) reflects correctly."""
+    client, task = await _connected_client(mock_server)
+    try:
+        await mock_server.push_update(
+            {"ScoreBoard.CurrentGame.Team(2).OfficialReviews": 0}
+        )
+        await asyncio.sleep(0.05)
+        state = client.get_live_state()
+        assert state.team2.official_reviews_remaining == 0
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+async def test_retained_official_review(mock_server):
+    """RetainedOfficialReview flag reflects correctly."""
+    client, task = await _connected_client(mock_server)
+    try:
+        await mock_server.push_update(
+            {"ScoreBoard.CurrentGame.Team(1).RetainedOfficialReview": True}
+        )
+        await asyncio.sleep(0.05)
+        state = client.get_live_state()
+        assert state.team1.retained_official_review is True
+        assert state.team2.retained_official_review is False
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+async def test_timeout_owner_none_outside_timeout(mock_server):
+    """timeout_owner is None when not in a timeout."""
+    client, task = await _connected_client(mock_server)
+    try:
+        state = client.get_live_state()
+        assert state.timeout_owner is None
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+async def test_timeout_owner_team1(mock_server):
+    """timeout_owner is '1' when Team 1 has the timeout."""
+    client, task = await _connected_client(mock_server)
+    try:
+        await mock_server.push_update(
+            {
+                "ScoreBoard.CurrentGame.TimeoutOwner": "1",
+                "ScoreBoard.CurrentGame.Clock(Timeout).Running": True,
+            }
+        )
+        await asyncio.sleep(0.05)
+        state = client.get_live_state()
+        assert state.timeout_owner == "1"
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+async def test_timeout_owner_official(mock_server):
+    """timeout_owner is 'O' for an official timeout."""
+    client, task = await _connected_client(mock_server)
+    try:
+        await mock_server.push_update(
+            {
+                "ScoreBoard.CurrentGame.TimeoutOwner": "O",
+                "ScoreBoard.CurrentGame.Clock(Timeout).Running": True,
+            }
+        )
+        await asyncio.sleep(0.05)
+        state = client.get_live_state()
+        assert state.timeout_owner == "O"
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+async def test_in_lineup_false_by_default(mock_server):
+    """in_lineup is False when Lineup clock is not running."""
+    client, task = await _connected_client(mock_server)
+    try:
+        state = client.get_live_state()
+        assert state.in_lineup is False
+    finally:
+        client.stop()
+        await asyncio.sleep(0.05)
+
+
+async def test_in_lineup_true_when_lineup_clock_running(mock_server):
+    """in_lineup is True when the Lineup clock is running."""
+    client, task = await _connected_client(mock_server)
+    try:
+        await mock_server.push_update(
+            {
+                "ScoreBoard.CurrentGame.Clock(Lineup).Running": True,
+            }
+        )
+        await asyncio.sleep(0.05)
+        state = client.get_live_state()
+        assert state.in_lineup is True
     finally:
         client.stop()
         await asyncio.sleep(0.05)
