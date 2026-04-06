@@ -3,13 +3,13 @@ from __future__ import annotations
 import argparse
 import logging
 from pathlib import Path
+from typing import Union
 
 import httpx
 import uvicorn
+from deploy import DEFAULT_BACKEND_PORT, read_active_backend_port
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
-
-from deploy import DEFAULT_BACKEND_PORT, read_active_backend_port
 
 logger = logging.getLogger(__name__)
 
@@ -33,11 +33,14 @@ def create_proxy_app(
     )
 
     @app.get("/_proxy/health")
-    async def proxy_health() -> dict[str, int | str]:
+    async def proxy_health() -> dict[str, Union[int, str]]:
         active_port = read_active_backend_port(state_path, default_backend_port)
         return {"status": "ok", "active_backend_port": active_port}
 
-    @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"])
+    @app.api_route(
+        "/{path:path}",
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
+    )
     async def reverse_proxy(path: str, request: Request) -> Response:
         active_port = read_active_backend_port(state_path, default_backend_port)
         target_url = f"http://{backend_host}:{active_port}/{path}"
